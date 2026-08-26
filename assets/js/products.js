@@ -3,6 +3,7 @@ import { api } from "./api.js";
 import { state } from "./state.js";
 import { $, makeProductId, productStatus, safeText, statusClass } from "./utils.js";
 import { fillSelect, navigate, showFormError, toast } from "./ui.js";
+import { locationName } from "./locations.js";
 
 function td(content, className = "") { const cell = document.createElement("td"); if (className) cell.className = className; if (content instanceof Node) cell.append(content); else cell.textContent = safeText(content); return cell; }
 function badgeNode(text) { const span = document.createElement("span"); span.className = `badge ${statusClass(text)}`; span.textContent = text; return span; }
@@ -34,7 +35,7 @@ export function renderProducts() {
     if (!tags.childElementCount) { const tag = document.createElement("span"); tag.className = "tag"; tag.textContent = "Sin asociar"; tags.append(tag); }
     const actions = document.createElement("div"); actions.className = "row-actions";
     [["eye", "Ver detalle", "detail"], ["route", "Ver trazabilidad", "trace"], ["package-plus", "Registrar evento", "event"]].forEach(([icon, title, action]) => { const button = document.createElement("button"); button.className = "icon-button"; button.title = title; button.setAttribute("aria-label", title); button.dataset.action = action; button.dataset.id = product.idProducto; button.innerHTML = `<i data-lucide="${icon}"></i>`; actions.append(button); });
-    row.append(td(id), td(name), td(product.categoria), td(product.lote), td(stock), td(product.ubicacionActual), td(badgeNode(productStatus(product))), td(tags), td(actions)); body.append(row);
+    row.append(td(id), td(name), td(product.categoria), td(product.lote), td(stock), td(locationName(product.ubicacionActual)), td(badgeNode(productStatus(product))), td(tags), td(actions)); body.append(row);
   });
   renderPagination(pages); window.lucide?.createIcons();
 }
@@ -53,12 +54,12 @@ export function showProductDetail(product) {
   const trace = document.createElement("button"); trace.className = "button light"; trace.textContent = "Ver trazabilidad"; trace.addEventListener("click", () => { dialog.close(); $("#traceProduct").value = product.idProducto; navigate("trace"); document.dispatchEvent(new CustomEvent("trace:render", { detail: product.idProducto })); });
   const close = document.createElement("button"); close.className = "button ghost"; close.style.color = "white"; close.textContent = "Cerrar"; close.addEventListener("click", () => dialog.close()); actions.append(trace, close); hero.append(kicker, title, description, actions);
   const body = document.createElement("div"); body.className = "detail-body"; const grid = document.createElement("div"); grid.className = "detail-grid";
-  [["Categoría", product.categoria], ["Lote", product.lote], ["Stock", product.cantidad], ["Ubicación", product.ubicacionActual], ["Estado", productStatus(product)], ["Vencimiento", product.fechaVencimiento || "—"], ["Code 1D", product.codigo1d || "—"], ["QR", product.codigoQr || "—"], ["RFID simulado", product.rfidUidEpc || "—"]].forEach(([label, value]) => { const box = document.createElement("div"); const span = document.createElement("span"); span.textContent = label; const strong = document.createElement("strong"); strong.textContent = value; box.append(span, strong); grid.append(box); });
+  [["Categoría", product.categoria], ["Lote", product.lote], ["Stock", product.cantidad], ["Ubicación", locationName(product.ubicacionActual)], ["Origen", locationName(product.origen)], ["Destino", locationName(product.destino)], ["Estado", productStatus(product)], ["Vencimiento", product.fechaVencimiento || "—"], ["Code 1D", product.codigo1d || "—"], ["QR", product.codigoQr || "—"], ["RFID simulado", product.rfidUidEpc || "—"]].forEach(([label, value]) => { const box = document.createElement("div"); const span = document.createElement("span"); span.textContent = label; const strong = document.createElement("strong"); strong.textContent = value; box.append(span, strong); grid.append(box); });
   body.append(grid); root.append(hero, body); dialog.showModal();
 }
 
 export function populateProductSelects() {
-  ["#generatorProduct", "#rfidProduct", "#traceProduct", "#eventProduct"].forEach(selector => fillSelect($(selector), state.products, { placeholder: selector === "#generatorProduct" ? "Sin relacionar / valor manual" : "Seleccionar producto" }));
+  ["#generatorProduct", "#rfidProduct", "#traceProduct", "#eventProduct", "#mapProductFilter"].forEach(selector => fillSelect($(selector), state.products, { placeholder: selector === "#generatorProduct" ? "Sin relacionar / valor manual" : selector === "#mapProductFilter" ? "Todos los productos" : "Seleccionar producto" }));
 }
 
 export function bindProducts() {

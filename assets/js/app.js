@@ -10,6 +10,8 @@ import { bindGenerator, generateCode } from "./generator.js";
 import { bindScanner } from "./scanner.js";
 import { bindRfid } from "./rfid.js";
 import { bindEvents, renderEvents, renderTrace } from "./events.js";
+import { bindLocations, populateLocationSelects, renderLocations } from "./locations.js";
+import { bindMap, renderLogisticsMap } from "./map.js";
 
 let loadingPromise = null;
 let initialized = false;
@@ -19,18 +21,18 @@ async function loadData({ quiet = false } = {}) {
   loadingPromise = (async () => {
     if (!quiet) setLoading(true); setConnection("loading", "Sincronizando…");
     try {
-      const [products, events] = await Promise.all([api.products(), api.events()]);
-      state.products = products; state.events = events; state.source = api.isWritable() ? "apps-script" : "published-csv"; state.lastSync = new Date();
+      const [products, events, locations] = await Promise.all([api.products(), api.events(), api.locations().catch(() => [])]);
+      state.products = products; state.events = events; state.locations = locations; state.geoApiAvailable = api.geoAvailable(); state.source = api.isWritable() ? "apps-script" : "published-csv"; state.lastSync = new Date();
       const issue = api.endpointIssue();
-      populateProductSelects(); renderAll(); setConnection("online", issue ? "Lectura segura · escritura bloqueada" : `Actualizado ${formatDate(state.lastSync)}`); renderHelp(true, issue?.message || "");
-      if (!quiet) toast(issue ? "Productos cargados en modo lectura" : "Datos sincronizados", issue ? `${products.length} productos. ${issue.message}` : `${products.length} productos y ${events.length} eventos cargados.`, issue ? "warning" : "success");
+      populateProductSelects(); populateLocationSelects(); renderAll(); setConnection("online", issue ? "Lectura segura · escritura bloqueada" : `Actualizado ${formatDate(state.lastSync)}`); renderHelp(true, issue?.message || "");
+      if (!quiet) toast(issue ? "Productos cargados en modo lectura" : "Datos sincronizados", issue ? `${products.length} productos. ${issue.message}` : `${products.length} productos, ${events.length} eventos y ${locations.length} ubicaciones.`, issue ? "warning" : "success");
     } catch (error) {
       setConnection("error", "No se pudo sincronizar"); renderHelp(false, error.message); toast("Error de conexión", error.message, "error");
     } finally { setLoading(false); loadingPromise = null; }
   })(); return loadingPromise;
 }
 
-function renderAll() { renderProducts(); renderInventory(); renderEvents(); renderDashboard(); if ($("#traceProduct").value) renderTrace($("#traceProduct").value); }
+function renderAll() { renderProducts(); renderInventory(); renderEvents(); renderLocations(); renderDashboard(); if ($("#view-map").classList.contains("active")) renderLogisticsMap(); if ($("#traceProduct").value) renderTrace($("#traceProduct").value); }
 
 function renderHelp(connected, error = "") {
   const issue = api.endpointIssue(), writable = api.isWritable();
@@ -73,7 +75,7 @@ function init() {
   if (initialized) return;
   initialized = true;
   document.documentElement.dataset.logitraceReady = "true";
-  bindNavigation(); bindProducts(); bindInventory(); bindGenerator(); bindScanner(); bindRfid(); bindEvents(); bindConnectivity(); bindWiki();
+  bindNavigation(); bindProducts(); bindInventory(); bindGenerator(); bindScanner(); bindRfid(); bindLocations(); bindMap(); bindEvents(); bindConnectivity(); bindWiki();
   renderAll(); renderHelp(false); renderWikiExamples(); window.lucide?.createIcons(); if (navigator.onLine) loadData();
   if (CONFIG.AUTO_REFRESH_SECONDS > 0) setInterval(() => { if (navigator.onLine && document.visibilityState === "visible") loadData({ quiet:true }); }, CONFIG.AUTO_REFRESH_SECONDS * 1000);
 }

@@ -3,6 +3,8 @@ import { state, findProduct } from "./state.js";
 import { $, codeTypeFor, productStatus, statusClass } from "./utils.js";
 import { showProductDetail } from "./products.js";
 import { navigate, toast } from "./ui.js";
+import { geoBadge } from "./map.js";
+import { locationName } from "./locations.js";
 
 function resultField(label, value) { const box = document.createElement("div"), span = document.createElement("span"), strong = document.createElement("strong"); span.textContent = label; strong.textContent = value || "—"; box.append(span, strong); return box; }
 
@@ -31,11 +33,14 @@ function renderResult(code, technology, product) {
   const value = document.createElement("div"); value.className = "result-code mono"; value.textContent = code; root.append(head, value);
   if (product) {
     const data = document.createElement("div"); data.className = "result-data"; [["Tecnología", technology], ["Producto", product.nombre], ["Categoría", product.categoria], ["Lote", product.lote], ["Stock", `${product.cantidad} unidades`], ["Ubicación", product.ubicacionActual], ["Estado", productStatus(product)], ["ID", product.idProducto]].forEach(([label, val]) => data.append(resultField(label, val)));
+    const productEvents = state.events.filter(event => event.idProducto === product.idProducto).sort((a, b) => new Date(b.fechaHora) - new Date(a.fechaHora)); const latest = productEvents.find(event => event.latCapturada !== null && event.lonCapturada !== null) || productEvents[0];
+    const geoPanel = document.createElement("section"); geoPanel.className = "scan-geo-panel"; const geoTitle = document.createElement("strong"); geoTitle.textContent = "Última evidencia geográfica"; const geoGrid = document.createElement("div"); geoGrid.className = "result-data"; [["Posición", latest?.latCapturada === null || !latest ? "Sin coordenadas" : `${Number(latest.latCapturada).toFixed(5)}, ${Number(latest.lonCapturada).toFixed(5)}`], ["Ubicación declarada", locationName(latest?.idUbicacionDeclarada)], ["Distancia", latest?.distanciaDeclaradaM === null || !latest ? "—" : `${Math.round(latest.distanciaDeclaradaM)} m`], ["Precisión GPS", latest?.precisionM === null || !latest ? "—" : `± ${Math.round(latest.precisionM)} m`]].forEach(([label, val]) => geoGrid.append(resultField(label, val))); geoPanel.append(geoTitle, geoGrid, geoBadge(latest?.validacionGeo || "SIN_GPS")); root.append(geoPanel);
     const actions = document.createElement("div"); actions.className = "scan-result-actions";
     const trace = document.createElement("button"); trace.className = "button primary"; trace.innerHTML = '<i data-lucide="route"></i>Ver trazabilidad'; trace.addEventListener("click", () => openTrace(product));
     const detail = document.createElement("button"); detail.className = "button secondary"; detail.innerHTML = '<i data-lucide="eye"></i>Ver ficha detallada'; detail.addEventListener("click", () => showProductDetail(product));
     const eventButton = document.createElement("button"); eventButton.className = "button secondary scan-event-action"; eventButton.innerHTML = '<i data-lucide="clipboard-plus"></i>Registrar evento'; eventButton.addEventListener("click", () => document.dispatchEvent(new CustomEvent("event:open", { detail: product.idProducto })));
-    actions.append(trace, detail, eventButton); root.append(data, actions);
+    const mapButton = document.createElement("button"); mapButton.className = "button secondary"; mapButton.innerHTML = '<i data-lucide="map"></i>Ver en mapa'; mapButton.addEventListener("click", () => { state.filters.mapProduct = product.idProducto; $("#mapProductFilter").value = product.idProducto; navigate("map"); });
+    actions.append(trace, detail, eventButton, mapButton); root.append(data, actions);
   } else { const notice = document.createElement("div"); notice.className = "inline-notice warning"; notice.textContent = "Verifica el valor o registra primero el producto. No se ha creado ningún evento."; root.append(notice); }
   window.lucide?.createIcons();
 }

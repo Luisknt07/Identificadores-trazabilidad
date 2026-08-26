@@ -64,7 +64,24 @@ export function normalizeEvent(rawRow) {
     ubicacion: pick(row, ["UBICACION"]), actor: pick(row, ["ACTOR"]), observacion: pick(row, ["OBSERVACION"]),
     estado: pick(row, ["ESTADO"], "Completado"), cantidadMovimiento: Number(pick(row, ["CANTIDAD_MOVIMIENTO"], 0)) || 0,
     stockAntes: Number(pick(row, ["STOCK_ANTES"], 0)) || 0, stockDespues: Number(pick(row, ["STOCK_DESPUES"], 0)) || 0,
-    ubicacionOrigen: pick(row, ["UBICACION_ORIGEN"]), ubicacionDestino: pick(row, ["UBICACION_DESTINO"])
+    ubicacionOrigen: pick(row, ["UBICACION_ORIGEN"]), ubicacionDestino: pick(row, ["UBICACION_DESTINO"]),
+    idUbicacionDeclarada: pick(row, ["ID_UBICACION_DECLARADA"]),
+    latCapturada: numberOrNull(pick(row, ["LAT_CAPTURADA"])), lonCapturada: numberOrNull(pick(row, ["LON_CAPTURADA"])),
+    precisionM: numberOrNull(pick(row, ["PRECISION_M"])), fuenteUbicacion: pick(row, ["FUENTE_UBICACION"], "SIN_GPS"),
+    distanciaDeclaradaM: numberOrNull(pick(row, ["DISTANCIA_DECLARADA_M"])), validacionGeo: pick(row, ["VALIDACION_GEO"], "SIN_GPS")
+  };
+}
+
+function numberOrNull(value) { const number = Number(value); return value === "" || value === null || value === undefined || !Number.isFinite(number) ? null : number; }
+
+export function normalizeLocation(rawRow) {
+  const row = Object.fromEntries(Object.entries(rawRow || {}).map(([key, value]) => [normalizeHeader(key), value]));
+  const active = pick(row, ["ACTIVO"], "Sí");
+  return {
+    idUbicacion: pick(row, ["ID_UBICACION", "ID"]), nombre: pick(row, ["NOMBRE"]), tipo: pick(row, ["TIPO"], "Otro"),
+    direccion: pick(row, ["DIRECCION"]), lat: numberOrNull(pick(row, ["LAT"])), lon: numberOrNull(pick(row, ["LON"])),
+    radioGeocercaM: numberOrNull(pick(row, ["RADIO_GEOCERCA_M"])), padreId: pick(row, ["PADRE_ID"]),
+    activo: !["NO", "FALSE", "0", "INACTIVO"].includes(String(active).trim().toUpperCase())
   };
 }
 

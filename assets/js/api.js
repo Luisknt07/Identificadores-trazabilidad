@@ -1,9 +1,10 @@
 import { CONFIG, hasWriteEndpoint } from "./config.js";
-import { normalizeEvent, normalizeProduct, parseCSV } from "./utils.js";
+import { normalizeEvent, normalizeLocation, normalizeProduct, parseCSV } from "./utils.js";
 
 let validatedHealth = null;
 let validationPromise = null;
 let endpointError = null;
+let geoAvailable = false;
 const REQUEST_TIMEOUT_MS = 30000;
 
 async function fetchWithTimeout(url, options = {}) {
@@ -110,11 +111,31 @@ export const api = {
     try { await validateEndpoint(); return (await apiGet("events", productId ? { productId } : {})).map(normalizeEvent); }
     catch { return []; }
   },
+  async locations() {
+    if (!hasWriteEndpoint()) return [];
+    try {
+      await validateEndpoint();
+      const rows = await apiGet("locations");
+      geoAvailable = true;
+      return rows.map(normalizeLocation).filter(item => item.idUbicacion);
+    } catch (error) {
+      if (error.code === "UNKNOWN_ACTION") { geoAvailable = false; return []; }
+      throw error;
+    }
+  },
+  async geoEvents() {
+    if (!hasWriteEndpoint()) return [];
+    try { const rows = await apiGet("geoEvents"); geoAvailable = true; return rows.map(normalizeEvent); }
+    catch (error) { if (error.code === "UNKNOWN_ACTION") return []; throw error; }
+  },
   async dashboard() { if (!hasWriteEndpoint()) return null; await validateEndpoint(); return apiGet("dashboard"); },
   async findByCode(code) { if (!hasWriteEndpoint()) return null; await validateEndpoint(); return apiGet("findProductByCode", { code }); },
   createProduct(data) { return apiPost("createProduct", data); },
   updateProduct(data) { return apiPost("updateProduct", data); },
   createEvent(data) { return apiPost("createEvent", data); },
+  createLocation(data) { return apiPost("createLocation", data); },
+  updateLocation(data) { return apiPost("updateLocation", data); },
   isWritable() { return Boolean(validatedHealth); },
+  geoAvailable() { return geoAvailable; },
   endpointIssue() { return endpointError; }
 };

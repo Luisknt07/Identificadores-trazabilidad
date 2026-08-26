@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynHTCJsv8hWjMZLlZ3OMjMZL4t0A=" crossorigin="">
   <link rel="stylesheet" href="assets/css/variables.css">
   <link rel="stylesheet" href="assets/css/layout.css">
   <link rel="stylesheet" href="assets/css/components.css">
@@ -36,6 +37,8 @@
         <button class="nav-item" data-view="scanner"><i data-lucide="scan-line"></i><span>Escáner</span></button>
         <button class="nav-item" data-view="rfid"><i data-lucide="radio-tower"></i><span>RFID simulado</span></button>
         <button class="nav-item" data-view="inventory"><i data-lucide="warehouse"></i><span>Inventario</span></button>
+        <button class="nav-item" data-view="locations"><i data-lucide="map-pin-house"></i><span>Ubicaciones</span></button>
+        <button class="nav-item" data-view="map"><i data-lucide="map"></i><span>Mapa</span></button>
         <button class="nav-item" data-view="trace"><i data-lucide="route"></i><span>Trazabilidad</span></button>
         <button class="nav-item" data-view="events"><i data-lucide="history"></i><span>Eventos</span></button>
       </nav>
@@ -68,6 +71,12 @@
           <div class="dashboard-grid">
             <article class="panel chart-panel"><div class="panel-head"><div><span class="section-kicker">Stock</span><h3>Inventario por categoría</h3></div></div><div class="chart-wrap"><canvas id="categoryChart"></canvas><div id="categoryEmpty" class="empty-state" hidden></div></div></article>
             <article class="panel chart-panel"><div class="panel-head"><div><span class="section-kicker">Identificación</span><h3>Tecnologías asociadas</h3></div></div><div class="chart-wrap donut"><canvas id="technologyChart"></canvas><div id="technologyEmpty" class="empty-state" hidden></div></div></article>
+          </div>
+          <div class="view-subheading"><div><span class="section-kicker">Control espacial</span><h3>Validación geográfica</h3><p>Indicadores calculados sobre la evidencia GPS registrada en los eventos.</p></div><button class="button secondary" data-view="map"><i data-lucide="map"></i>Abrir mapa</button></div>
+          <div id="dashboardGeoKpis" class="kpi-grid compact" aria-live="polite"></div>
+          <div class="dashboard-grid">
+            <article class="panel chart-panel"><div class="panel-head"><div><span class="section-kicker">Geocercas</span><h3>Estados de validación</h3></div></div><div class="chart-wrap donut"><canvas id="geoValidationChart"></canvas><div id="geoValidationEmpty" class="empty-state">Aún no hay eventos geográficos.</div></div></article>
+            <article class="panel chart-panel"><div class="panel-head"><div><span class="section-kicker">Excepciones</span><h3>Fuera de geocerca por ubicación</h3></div></div><div class="chart-wrap"><canvas id="geoExceptionsChart"></canvas><div id="geoExceptionsEmpty" class="empty-state">Sin excepciones geográficas.</div></div></article>
           </div>
           <article class="panel"><div class="panel-head"><div><span class="section-kicker">Actividad reciente</span><h3>Últimos movimientos</h3></div><button class="text-button" data-view="events">Ver historial <i data-lucide="arrow-right"></i></button></div><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>Producto</th><th>Evento</th><th>Cantidad</th><th>Ubicación</th><th>Actor</th><th>Estado</th></tr></thead><tbody id="recentEventsBody"></tbody></table></div></article>
         </section>
@@ -136,6 +145,22 @@
           </div>
         </section>
 
+        <section id="view-locations" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Maestro geográfico</span><h2>Ubicaciones logísticas</h2><p id="locationsCount">Centros, proveedores, clientes y ubicaciones internas.</p></div><button id="newLocationBtn" class="button primary"><i data-lucide="map-pin-plus"></i>Nueva ubicación</button></div>
+          <div id="locationsMigrationNotice" class="inline-notice warning" hidden><i data-lucide="triangle-alert"></i><span>La API geográfica aún no está publicada. Copia el nuevo <strong>Code.gs</strong>, ejecuta <strong>initializeSheets()</strong> y crea una nueva versión de la implementación.</span></div>
+          <div class="toolbar panel"><label class="search-field"><i data-lucide="search"></i><input id="locationSearch" type="search" placeholder="Buscar por ID, nombre, tipo o dirección" aria-label="Buscar ubicaciones"></label><select id="locationTypeFilter"><option value="">Todos los tipos</option></select><button class="button secondary" data-view="map"><i data-lucide="map"></i>Ver mapa</button></div>
+          <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>ID</th><th>Nombre</th><th>Tipo</th><th>Dirección</th><th>Lat</th><th>Lon</th><th>Radio</th><th>Padre</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="locationsBody"></tbody></table></div></article>
+        </section>
+
+        <section id="view-map" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Trazabilidad espacial</span><h2>Mapa logístico</h2><p>Ubicaciones, geocercas, eventos y excepciones sobre OpenStreetMap.</p></div><div class="heading-actions"><button id="exportLocationsGeojson" class="button secondary"><i data-lucide="download"></i>Ubicaciones GeoJSON</button><button id="exportEventsGeojson" class="button secondary"><i data-lucide="download"></i>Eventos GeoJSON</button></div></div>
+          <article class="panel map-filter-panel">
+            <div class="map-filter-grid"><label class="field"><span>Producto</span><select id="mapProductFilter"><option value="">Todos</option></select></label><label class="field"><span>Tipo de evento</span><select id="mapEventFilter"><option value="">Todos</option></select></label><label class="field"><span>Estado geo</span><select id="mapStatusFilter"><option value="">Todos</option><option value="OK">OK</option><option value="FUERA_GEOCERCA">Fuera de geocerca</option><option value="BAJA_PRECISION">Baja precisión</option><option value="SIN_GPS">Sin GPS</option></select></label><label class="field"><span>Ubicación</span><select id="mapLocationFilter"><option value="">Todas</option></select></label><label class="field"><span>Desde</span><input id="mapDateFrom" type="date"></label><label class="field"><span>Hasta</span><input id="mapDateTo" type="date"></label></div>
+            <div class="map-filter-actions"><label class="check-field"><input id="showGeofences" type="checkbox" checked><span>Mostrar geocercas</span></label><span id="mapNoGpsCount" class="badge neutral">0 eventos sin coordenadas</span><button id="applyMapFilters" class="button primary">Aplicar</button><button id="clearMapFilters" class="button ghost">Limpiar</button><button id="fitMapBtn" class="button secondary"><i data-lucide="maximize"></i>Ajustar mapa</button></div>
+          </article>
+          <article class="panel map-panel"><div id="logisticsMap" class="logistics-map" aria-label="Mapa de ubicaciones y eventos"></div><div class="map-legend"><strong>Leyenda</strong><span>✓ OK</span><span>! Fuera de geocerca</span><span>≈ Baja precisión</span><span>— Sin GPS</span><span>P Planta</span><span>CD Distribución</span><span>PR Proveedor</span><span>CL Cliente</span><span>IN Interna</span></div></article>
+        </section>
+
         <section id="view-trace" class="view">
           <div class="view-heading"><div><span class="section-kicker">Historia inmutable</span><h2>Trazabilidad</h2><p>Consulta el recorrido completo de un producto.</p></div></div>
           <article class="panel trace-search"><label class="field"><span>Seleccionar producto</span><select id="traceProduct"><option value="">Elige un producto para consultar</option></select></label></article>
@@ -145,7 +170,7 @@
         <section id="view-events" class="view">
           <div class="view-heading"><div><span class="section-kicker">Bitácora operativa</span><h2>Eventos logísticos</h2><p>Recepciones, ubicaciones, movimientos, despachos e incidencias.</p></div><button id="newEventBtn" class="button primary"><i data-lucide="plus"></i>Registrar evento</button></div>
           <div class="toolbar panel"><label class="search-field"><i data-lucide="search"></i><input id="eventSearch" type="search" placeholder="Buscar por producto, código o actor" aria-label="Buscar eventos"></label><select id="eventTypeFilter"><option value="">Todos los eventos</option></select></div>
-          <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>ID evento</th><th>Producto</th><th>Evento</th><th>Movimiento</th><th>Stock</th><th>Ruta / ubicación</th><th>Actor</th><th>Estado</th></tr></thead><tbody id="eventsBody"></tbody></table></div></article>
+          <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>ID evento</th><th>Producto</th><th>Evento</th><th>Movimiento</th><th>Stock</th><th>Ruta / ubicación</th><th>Actor</th><th>Validación geo</th><th>Estado</th></tr></thead><tbody id="eventsBody"></tbody></table></div></article>
         </section>
 
         <section id="view-help" class="view">
@@ -286,9 +311,9 @@
         <label class="field"><span>Cantidad inicial <b>*</b></span><input name="cantidad" type="number" min="0" step="1" value="0" required></label>
         <label class="field span-2"><span>Descripción</span><textarea name="descripcion" rows="2" maxlength="300"></textarea></label>
         <label class="field"><span>Fecha de vencimiento</span><input name="fechaVencimiento" type="date"></label>
-        <label class="field"><span>Ubicación actual</span><input name="ubicacionActual" maxlength="80"></label>
-        <label class="field"><span>Origen</span><input name="origen" maxlength="80"></label>
-        <label class="field"><span>Destino</span><input name="destino" maxlength="80"></label>
+        <label class="field"><span>Ubicación actual</span><select id="productCurrentLocation" name="ubicacionActual"><option value="">Seleccionar ubicación</option></select></label>
+        <label class="field"><span>Origen</span><select id="productOrigin" name="origen"><option value="">Seleccionar ubicación</option></select></label>
+        <label class="field"><span>Destino</span><select id="productDestination" name="destino"><option value="">Seleccionar ubicación</option></select></label>
       </div>
       <div id="productFormError" class="form-error" hidden></div>
       <div class="modal-actions"><button class="button ghost" value="cancel" formnovalidate>Cancelar</button><button id="saveProductBtn" class="button primary" value="default"><i data-lucide="save"></i>Guardar producto</button></div>
@@ -302,17 +327,42 @@
         <label class="field span-2"><span>Producto <b>*</b></span><select id="eventProduct" name="idProducto" required><option value="">Seleccionar producto</option></select></label>
         <label class="field"><span>Tipo de evento <b>*</b></span><select id="eventType" name="evento" required></select></label>
         <label id="eventQuantityField" class="field"><span>Cantidad <b>*</b></span><input name="cantidadMovimiento" type="number" min="1" step="1"></label>
-        <label id="originLocationField" class="field"><span>Ubicación origen</span><input name="ubicacionOrigen" maxlength="80"></label>
-        <label id="destinationLocationField" class="field"><span>Ubicación destino</span><input name="ubicacionDestino" maxlength="80"></label>
+        <label id="originLocationField" class="field"><span>Ubicación origen</span><select name="ubicacionOrigen" id="eventOriginLocation"><option value="">Seleccionar ubicación</option></select></label>
+        <label id="destinationLocationField" class="field"><span>Ubicación destino</span><select name="ubicacionDestino" id="eventDestinationLocation"><option value="">Seleccionar ubicación</option></select></label>
+        <label class="field span-2"><span>Ubicación declarada <b>*</b></span><select id="eventDeclaredLocation" name="idUbicacionDeclarada" required><option value="">Seleccionar ubicación</option></select><small>Se guarda el ID y el servidor valida la geocerca.</small></label>
         <label class="field"><span>Actor <b>*</b></span><input name="actor" required maxlength="80" placeholder="Operador 01"></label>
         <label class="field"><span>Estado</span><select name="estado"><option>Completado</option><option>Pendiente</option><option>Con incidencia</option></select></label>
         <label class="field span-2"><span>Observación</span><textarea name="observacion" rows="3" maxlength="400"></textarea></label>
+        <section class="event-geo-panel span-2"><div class="event-geo-head"><div><span class="section-kicker">Evidencia geográfica</span><strong>Posición del evento</strong></div><button id="captureEventPositionBtn" class="button secondary" type="button"><i data-lucide="locate-fixed"></i>Obtener posición</button><button id="selectEventMapBtn" class="button ghost" type="button"><i data-lucide="map-pin"></i>Seleccionar en mapa</button></div><div id="eventPositionSummary" class="position-summary"><span>Sin posición capturada</span><small>El evento podrá guardarse como SIN_GPS si no hay señal o permiso.</small></div><div id="eventPickerMap" class="event-picker-map" hidden></div><input id="eventLat" name="latCapturada" type="hidden"><input id="eventLon" name="lonCapturada" type="hidden"><input id="eventAccuracy" name="precisionM" type="hidden"><input id="eventLocationSource" name="fuenteUbicacion" type="hidden" value="SIN_GPS"></section>
       </div>
       <div id="eventStockPreview" class="stock-preview" hidden></div>
       <div id="eventFormError" class="form-error" hidden></div>
       <div class="modal-actions"><button class="button ghost" value="cancel" formnovalidate>Cancelar</button><button id="saveEventBtn" class="button primary" value="default"><i data-lucide="check"></i>Confirmar evento</button></div>
     </form>
   </dialog>
+
+  <dialog id="locationDialog" class="modal-dialog wide-dialog">
+    <form id="locationForm" method="dialog" novalidate>
+      <div class="modal-head"><div><span class="section-kicker">Maestro geográfico</span><h2 id="locationDialogTitle">Registrar ubicación</h2><p>Define el punto logístico y el radio de su geocerca.</p></div><button class="icon-button" value="cancel" formnovalidate aria-label="Cerrar"><i data-lucide="x"></i></button></div>
+      <div class="form-grid">
+        <label class="field span-2"><span>ID ubicación <b>*</b></span><div class="input-action"><input id="locationId" name="idUbicacion" required maxlength="50"><button id="generateLocationId" type="button" class="button secondary">Generar</button></div></label>
+        <label class="field"><span>Nombre <b>*</b></span><input id="locationName" name="nombre" required maxlength="100"></label>
+        <label class="field"><span>Tipo <b>*</b></span><select id="locationType" name="tipo" required><option value="">Seleccionar tipo</option></select></label>
+        <label class="field span-2"><span>Dirección</span><input id="locationAddress" name="direccion" maxlength="180"></label>
+        <label class="field"><span>Latitud</span><input id="locationLat" name="lat" type="number" min="-90" max="90" step="any"></label>
+        <label class="field"><span>Longitud</span><input id="locationLon" name="lon" type="number" min="-180" max="180" step="any"></label>
+        <label class="field"><span>Radio de geocerca (m)</span><input id="locationRadius" name="radioGeocercaM" type="number" min="1" step="1"></label>
+        <label class="field"><span>Ubicación padre</span><select id="locationParent" name="padreId"><option value="">Sin ubicación padre</option></select></label>
+        <label class="check-field span-2"><input id="locationActive" type="checkbox" checked><span>Ubicación activa</span></label>
+        <div class="span-2 coordinate-actions"><button id="useCurrentPositionBtn" type="button" class="button secondary"><i data-lucide="locate-fixed"></i>Usar mi posición actual</button><span id="locationAccuracy">Puedes usar GPS o seleccionar un punto en el mapa.</span></div>
+        <div id="locationPickerMap" class="location-picker-map span-2" aria-label="Seleccionar coordenadas en el mapa"></div>
+      </div>
+      <div id="locationFormError" class="form-error" hidden></div>
+      <div class="modal-actions"><button class="button ghost" value="cancel" formnovalidate>Cancelar</button><button id="saveLocationBtn" class="button primary" value="default"><i data-lucide="save"></i>Guardar ubicación</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="geoResultDialog" class="modal-dialog geo-result-dialog"><div id="geoResultContent"></div><form method="dialog" class="modal-actions"><button class="button primary">Cerrar</button></form></dialog>
 
   <dialog id="productDetailDialog" class="modal-dialog detail-dialog"><div id="productDetailContent"></div></dialog>
   <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
@@ -324,6 +374,7 @@
         dashboard: ["Dashboard", "Resumen operativo"], products: ["Productos", "Catálogo de productos"],
         generator: ["Generar códigos", "Centro de etiquetado"], scanner: ["Escáner", "Lectura de identificadores"],
         rfid: ["RFID", "Identificación simulada"], inventory: ["Inventario", "Existencias vigentes"],
+        locations: ["Ubicaciones", "Maestro geográfico"], map: ["Mapa", "Visibilidad espacial"],
         trace: ["Trazabilidad", "Historia del producto"], events: ["Eventos", "Bitácora logística"],
         help: ["Ayuda", "Conexión y configuración"]
       };
@@ -356,6 +407,7 @@
   <script src="assets/vendor/qrcode.min.js"></script>
   <script src="assets/vendor/html5-qrcode.min.js"></script>
   <script src="assets/vendor/html2canvas.min.js"></script>
-  <script type="module" src="assets/js/app.js?v=20260826-14"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script type="module" src="assets/js/app.js?v=20260826-15"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ import { $, $$ } from "./utils.js";
 const titles = {
   dashboard: ["Dashboard", "Resumen operativo"], products: ["Productos", "Catálogo de productos"], generator: ["Generar códigos", "Centro de etiquetado"],
   scanner: ["Escáner", "Lectura de identificadores"], rfid: ["RFID", "Identificación simulada"], inventory: ["Inventario", "Existencias vigentes"],
+  locations: ["Ubicaciones", "Maestro geográfico"], map: ["Mapa", "Visibilidad espacial"],
   trace: ["Trazabilidad", "Historia del producto"], events: ["Eventos", "Bitácora logística"], help: ["Ayuda", "Conexión y configuración"]
 };
 

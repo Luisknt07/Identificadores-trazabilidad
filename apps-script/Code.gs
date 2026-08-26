@@ -3,10 +3,12 @@
  * Desplegar como aplicación web: ejecutar como propietario y acceso para cualquier usuario.
  */
 const SPREADSHEET_ID = "1LqSaUtezToYJPRM65GRr-U5IHxHLR677faxWFkogRic";
-const API_VERSION = "2026-08-26.2";
+const API_VERSION = "2026-08-26.3-geo";
 const TIMEZONE = "America/Guayaquil";
 const PRODUCT_SHEET = "PRODUCTOS";
 const EVENT_SHEET = "EVENTOS";
+const LOCATION_SHEET = "Ubicaciones";
+const MAX_ACCEPTABLE_ACCURACY_M = 100;
 
 const PRODUCT_HEADERS = [
   "ID_PRODUCTO", "NOMBRE", "CATEGORIA", "LOTE", "CANTIDAD", "FECHA_VENCIMIENTO",
@@ -18,7 +20,14 @@ const PRODUCT_HEADERS = [
 const EVENT_HEADERS = [
   "ID_EVENTO", "FECHA_HORA", "ID_PRODUCTO", "TIPO_IDENTIFICACION", "CODIGO_LEIDO",
   "EVENTO", "UBICACION", "ACTOR", "OBSERVACION", "ESTADO", "CANTIDAD_MOVIMIENTO",
-  "STOCK_ANTES", "STOCK_DESPUES", "UBICACION_ORIGEN", "UBICACION_DESTINO"
+  "STOCK_ANTES", "STOCK_DESPUES", "UBICACION_ORIGEN", "UBICACION_DESTINO",
+  "ID_UBICACION_DECLARADA", "LAT_CAPTURADA", "LON_CAPTURADA", "PRECISION_M",
+  "FUENTE_UBICACION", "DISTANCIA_DECLARADA_M", "VALIDACION_GEO"
+];
+
+const LOCATION_HEADERS = [
+  "ID_UBICACION", "NOMBRE", "TIPO", "DIRECCION", "LAT", "LON",
+  "RADIO_GEOCERCA_M", "PADRE_ID", "ACTIVO"
 ];
 
 const EVENT_TYPES = ["Recepción", "Ingreso al almacén", "Ubicación", "Movimiento interno", "Preparación de pedido", "Despacho", "Entrega", "Devolución", "Incidencia"];
@@ -37,6 +46,10 @@ function doGet(e) {
       case "products": data = getProducts(); break;
       case "product": data = getProduct(requireText_(params.id, "ID_REQUIRED", "Indica el ID del producto.")); break;
       case "events": data = getEvents(params.productId || ""); break;
+      case "locations": data = getLocations(); break;
+      case "location": data = getLocation(requireText_(params.id, "LOCATION_ID_REQUIRED", "Indica el ID de la ubicación.")); break;
+      case "geoEvents": data = getGeoEvents(); break;
+      case "trace": data = { product: getProduct(requireText_(params.productId, "PRODUCT_REQUIRED", "Indica el producto.")), events: getEvents(params.productId) }; break;
       case "inventory": data = getInventory(); break;
       case "dashboard": data = getDashboard(); break;
       case "findProductByCode": data = findProductByCode(requireText_(params.code, "CODE_REQUIRED", "Indica el código.")); break;
@@ -56,6 +69,8 @@ function doPost(e) {
       case "createProduct": result = createProduct(data); break;
       case "updateProduct": result = updateProduct(data); break;
       case "createEvent": result = createEvent(data); break;
+      case "createLocation": result = createLocation(data); break;
+      case "updateLocation": result = updateLocation(data); break;
       default: throw new AppError_("UNKNOWN_ACTION", "Acción POST no reconocida.");
     }
     return respond_(true, "Operación completada correctamente", result);
@@ -67,10 +82,12 @@ function initializeSheets() {
   spreadsheet.setSpreadsheetTimeZone(TIMEZONE);
   const products = findOrCreateSheet_(PRODUCT_SHEET, PRODUCT_HEADERS);
   const events = findOrCreateSheet_(EVENT_SHEET, EVENT_HEADERS);
+  const locations = findOrCreateSheet_(LOCATION_SHEET, LOCATION_HEADERS);
   ensureHeaders_(products, PRODUCT_HEADERS);
   ensureHeaders_(events, EVENT_HEADERS);
-  styleHeader_(products); styleHeader_(events);
-  products.setFrozenRows(1); events.setFrozenRows(1);
+  ensureHeaders_(locations, LOCATION_HEADERS);
+  styleHeader_(products); styleHeader_(events); styleHeader_(locations);
+  products.setFrozenRows(1); events.setFrozenRows(1); locations.setFrozenRows(1);
   if (products.getMaxColumns() >= PRODUCT_HEADERS.indexOf("FECHA_REGISTRO") + 1) {
     const dateRows = Math.max(1, products.getLastRow() - 1);
     const registrationColumn = PRODUCT_HEADERS.indexOf("FECHA_REGISTRO") + 1;
@@ -81,16 +98,18 @@ function initializeSheets() {
     products.getRange(2, updateColumn, dateRows, 1).setNumberFormat("dd/MM/yyyy HH:mm:ss");
   }
   events.getRange(2, 2, Math.max(1, events.getLastRow() - 1), 1).setNumberFormat("dd/MM/yyyy HH:mm:ss");
-  return { productsSheet: products.getName(), eventsSheet: events.getName(), spreadsheetId: SPREADSHEET_ID };
+  return { productsSheet: products.getName(), eventsSheet: events.getName(), locationsSheet: locations.getName(), spreadsheetId: SPREADSHEET_ID };
 }
 
 function health() {
   const spreadsheet = spreadsheet_();
   const products = spreadsheet.getSheetByName(PRODUCT_SHEET);
   const events = spreadsheet.getSheetByName(EVENT_SHEET);
+  const locations = spreadsheet.getSheetByName(LOCATION_SHEET);
   const sheets = {
     productsSheet: products ? products.getName() : "",
     eventsSheet: events ? events.getName() : "",
+    locationsSheet: locations ? locations.getName() : "",
     spreadsheetId: SPREADSHEET_ID
   };
   return { status: "ok", service: "LogiTrace API", apiVersion: API_VERSION, timestamp: new Date().toISOString(), timezone: TIMEZONE, spreadsheetId: SPREADSHEET_ID, writable: true, sheets: sheets };
@@ -154,6 +173,89 @@ function updateProduct(data) {
   } finally { lock.releaseLock(); }
 }
 
+function getLocations() {
+  return rowsAsObjects_(locationSheet_()).map(locationToApi_).filter(function (location) { return location.idUbicacion; });
+}
+
+function getLocation(id) {
+  const location = getLocations().find(function (item) { return same_(item.idUbicacion, id); });
+  if (!location) throw new AppError_("LOCATION_NOT_FOUND", "La ubicación no existe.");
+  return location;
+}
+
+function createLocation(data) {
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const sheet = locationSheet_();
+    const id = requireText_(data.idUbicacion, "LOCATION_ID_REQUIRED", "El ID de ubicación es obligatorio.");
+    if (findRow_(sheet, "ID_UBICACION", id)) throw new AppError_("DUPLICATE_LOCATION", "Ya existe una ubicación con ese ID.");
+    const record = locationRecord_(data, id);
+    appendObject_(sheet, record);
+    return locationToApi_(record);
+  } finally { lock.releaseLock(); }
+}
+
+function updateLocation(data) {
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const sheet = locationSheet_(); const id = requireText_(data.idUbicacion, "LOCATION_ID_REQUIRED", "El ID de ubicación es obligatorio."); const match = findRow_(sheet, "ID_UBICACION", id);
+    if (!match) throw new AppError_("LOCATION_NOT_FOUND", "La ubicación no existe.");
+    const merged = Object.assign({}, locationToApi_(match.object), data); const record = locationRecord_(merged, id);
+    Object.keys(record).forEach(function (header) { if (header !== "ID_UBICACION") setCell_(sheet, match.rowNumber, header, record[header]); });
+    return getLocation(id);
+  } finally { lock.releaseLock(); }
+}
+
+function locationRecord_(data, id) {
+  const lat = decimalOrBlank_(data.lat, "INVALID_LATITUDE", "La latitud debe estar entre -90 y 90.", -90, 90);
+  const lon = decimalOrBlank_(data.lon, "INVALID_LONGITUDE", "La longitud debe estar entre -180 y 180.", -180, 180);
+  if ((lat === "") !== (lon === "")) throw new AppError_("INCOMPLETE_COORDINATES", "Latitud y longitud deben informarse juntas.");
+  const radius = decimalOrBlank_(data.radioGeocercaM, "INVALID_RADIUS", "El radio debe ser mayor que cero.", 0, null, false);
+  const parent = clean_(data.padreId); if (parent && same_(parent, id)) throw new AppError_("LOCATION_CYCLE", "Una ubicación no puede ser su propio padre.");
+  if (parent) getLocation(parent);
+  if (lat === "" && !parent) throw new AppError_("COORDINATES_REQUIRED", "Indica coordenadas o una ubicación padre.");
+  return { ID_UBICACION: id, NOMBRE: requireText_(data.nombre, "LOCATION_NAME_REQUIRED", "El nombre es obligatorio."), TIPO: requireText_(data.tipo, "LOCATION_TYPE_REQUIRED", "El tipo es obligatorio."), DIRECCION: clean_(data.direccion), LAT: lat, LON: lon, RADIO_GEOCERCA_M: radius, PADRE_ID: parent, ACTIVO: booleanYesNo_(data.activo) };
+}
+
+function resolveLocationCoordinates(idUbicacion) { return resolveLocationCoordinates_(idUbicacion, {}); }
+function resolveLocationCoordinates_(idUbicacion, visited) {
+  const id = requireText_(idUbicacion, "LOCATION_ID_REQUIRED", "Indica la ubicación declarada.");
+  if (visited[normalize_(id)]) throw new AppError_("LOCATION_CYCLE", "Se detectó un ciclo en la jerarquía de ubicaciones.");
+  visited[normalize_(id)] = true;
+  const location = getLocation(id);
+  if (isCoordinate_(location.lat, -90, 90) && isCoordinate_(location.lon, -180, 180)) return { idUbicacion: location.idUbicacion, nombre: location.nombre, lat: Number(location.lat), lon: Number(location.lon), radio: positiveOrNull_(location.radioGeocercaM), effectiveLocationId: location.idUbicacion };
+  if (!location.padreId) throw new AppError_("LOCATION_WITHOUT_COORDINATES", "La ubicación no tiene coordenadas ni ubicación padre.");
+  const parent = resolveLocationCoordinates_(location.padreId, visited);
+  return { idUbicacion: location.idUbicacion, nombre: location.nombre, lat: parent.lat, lon: parent.lon, radio: positiveOrNull_(location.radioGeocercaM) || parent.radio, effectiveLocationId: parent.effectiveLocationId };
+}
+
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const toRadians = function (degrees) { return Number(degrees) * Math.PI / 180; };
+  const deltaLat = toRadians(Number(lat2) - Number(lat1)); const deltaLon = toRadians(Number(lon2) - Number(lon1));
+  const a = Math.pow(Math.sin(deltaLat / 2), 2) + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.pow(Math.sin(deltaLon / 2), 2);
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function validateGeoEvent(data, idUbicacion) {
+  const lat = decimalOrBlank_(data.latCapturada, "INVALID_CAPTURED_LATITUDE", "Latitud capturada inválida.", -90, 90); const lon = decimalOrBlank_(data.lonCapturada, "INVALID_CAPTURED_LONGITUDE", "Longitud capturada inválida.", -180, 180);
+  if (lat === "" || lon === "") return { status: "SIN_GPS", distanceMeters: null, geofenceRadiusMeters: null, accuracyMeters: null, declaredLocation: idUbicacion ? getLocation(idUbicacion).nombre : "Sin declarar" };
+  const accuracy = decimalOrBlank_(data.precisionM, "INVALID_ACCURACY", "La precisión debe ser mayor o igual a cero.", 0, null, true); const location = resolveLocationCoordinates(idUbicacion); const distance = haversineDistance(location.lat, location.lon, lat, lon);
+  let status = "OK"; if (accuracy !== "" && Number(accuracy) > MAX_ACCEPTABLE_ACCURACY_M) status = "BAJA_PRECISION"; else if (!location.radio || distance > location.radio) status = "FUERA_GEOCERCA";
+  return { status: status, distanceMeters: Math.round(distance * 10) / 10, geofenceRadiusMeters: location.radio, accuracyMeters: accuracy === "" ? null : Number(accuracy), declaredLocation: location.nombre, effectiveLocationId: location.effectiveLocationId };
+}
+
+function getGeoEvents() { return getEvents("").filter(function (event) { return event.latCapturada !== null && event.lonCapturada !== null; }); }
+
+function buildLocationsGeoJSON() {
+  const locations = getLocations(); const features = [];
+  locations.forEach(function (location) { try { const resolved = resolveLocationCoordinates(location.idUbicacion); features.push({ type: "Feature", geometry: { type: "Point", coordinates: [resolved.lon, resolved.lat] }, properties: { id_ubicacion: location.idUbicacion, nombre: location.nombre, tipo: location.tipo, radio_geocerca_m: resolved.radio } }); } catch (ignore) {} });
+  return { type: "FeatureCollection", features: features };
+}
+
+function buildEventsGeoJSON() {
+  return { type: "FeatureCollection", features: getGeoEvents().map(function (event) { return { type: "Feature", geometry: { type: "Point", coordinates: [event.lonCapturada, event.latCapturada] }, properties: { id_evento: event.idEvento, id_producto: event.idProducto, evento: event.evento, fecha_hora: event.fechaHora, id_ubicacion_declarada: event.idUbicacionDeclarada, precision_m: event.precisionM, distancia_declarada_m: event.distanciaDeclaradaM, validacion_geo: event.validacionGeo } }; }) };
+}
+
 function getEvents(productId) {
   return rowsAsObjects_(eventSheet_()).map(eventToApi_).filter(function (event) { return event.idEvento && (!productId || same_(event.idProducto, productId)); });
 }
@@ -178,13 +280,24 @@ function createEvent(data) {
     const destino = clean_(data.ubicacionDestino);
     if (LOCATION_EVENTS.indexOf(evento) >= 0 && !destino) throw new AppError_("LOCATION_REQUIRED", "La ubicación destino es obligatoria.");
     const nuevaUbicacion = (LOCATION_EVENTS.indexOf(evento) >= 0 || evento === "Recepción") && destino ? destino : clean_(product.UBICACION_ACTUAL);
+    const idUbicacionDeclarada = clean_(data.idUbicacionDeclarada) || destino || nuevaUbicacion || origen;
+    let geoValidation;
+    try { geoValidation = validateGeoEvent(data, idUbicacionDeclarada); }
+    catch (geoError) {
+      if (clean_(data.latCapturada) || clean_(data.lonCapturada) || clean_(data.idUbicacionDeclarada)) throw geoError;
+      geoValidation = { status: "SIN_GPS", distanceMeters: null, geofenceRadiusMeters: null, accuracyMeters: null, declaredLocation: idUbicacionDeclarada || "Sin declarar" };
+    }
     const now = new Date();
     const eventRecord = {
       ID_EVENTO: "EVT-" + Utilities.getUuid(), FECHA_HORA: now, ID_PRODUCTO: idProducto,
       TIPO_IDENTIFICACION: clean_(data.tipoIdentificacion), CODIGO_LEIDO: clean_(data.codigoLeido), EVENTO: evento,
       UBICACION: nuevaUbicacion || origen, ACTOR: actor, OBSERVACION: clean_(data.observacion),
       ESTADO: clean_(data.estado) || "Completado", CANTIDAD_MOVIMIENTO: cantidad,
-      STOCK_ANTES: stockAntes, STOCK_DESPUES: stockDespues, UBICACION_ORIGEN: origen, UBICACION_DESTINO: destino
+      STOCK_ANTES: stockAntes, STOCK_DESPUES: stockDespues, UBICACION_ORIGEN: origen, UBICACION_DESTINO: destino,
+      ID_UBICACION_DECLARADA: idUbicacionDeclarada, LAT_CAPTURADA: clean_(data.latCapturada) === "" ? "" : Number(data.latCapturada),
+      LON_CAPTURADA: clean_(data.lonCapturada) === "" ? "" : Number(data.lonCapturada), PRECISION_M: clean_(data.precisionM) === "" ? "" : Number(data.precisionM),
+      FUENTE_UBICACION: clean_(data.fuenteUbicacion) || (clean_(data.latCapturada) ? "GPS" : "SIN_GPS"), DISTANCIA_DECLARADA_M: geoValidation.distanceMeters === null ? "" : geoValidation.distanceMeters,
+      VALIDACION_GEO: geoValidation.status
     };
     // La fila del producto se actualiza primero. Si fallara el append, se restauran sus valores.
     const previousLocation = clean_(product.UBICACION_ACTUAL); const previousState = clean_(product.ESTADO);
@@ -200,7 +313,7 @@ function createEvent(data) {
       throw error;
     }
     SpreadsheetApp.flush();
-    return eventToApi_(eventRecord);
+    return { event: eventToApi_(eventRecord), geoValidation: geoValidation };
   } finally { lock.releaseLock(); }
 }
 
@@ -217,6 +330,8 @@ function getDashboard() {
     if (p.codigo1d) technologies[String(p.tipoCodigo1d).toUpperCase().indexOf("EAN") >= 0 ? "EAN13" : "CODE128"] += 1;
     if (p.codigoQr) technologies.QR += 1; if (p.rfidUidEpc) technologies.RFID += 1;
   });
+  const geoCounts = { OK: 0, FUERA_GEOCERCA: 0, BAJA_PRECISION: 0, SIN_GPS: 0 }; const geoExceptionsByLocation = {};
+  events.forEach(function (event) { const status = event.validacionGeo || "SIN_GPS"; geoCounts[status] = (geoCounts[status] || 0) + 1; if (status === "FUERA_GEOCERCA") geoExceptionsByLocation[event.idUbicacionDeclarada || "Sin declarar"] = (geoExceptionsByLocation[event.idUbicacionDeclarada || "Sin declarar"] || 0) + 1; });
   return {
     products: products.length, units: products.reduce(function (sum, p) { return sum + p.cantidad; }, 0),
     categories: Object.keys(categories).length, lowStock: products.filter(function (p) { return p.cantidad > 0 && p.cantidad <= 5; }).length,
@@ -225,7 +340,7 @@ function getDashboard() {
     receptions: events.filter(function (event) { return event.evento === "Recepción"; }).length,
     dispatches: events.filter(function (event) { return event.evento === "Despacho"; }).length,
     incidents: events.filter(function (event) { return event.evento === "Incidencia"; }).length,
-    inventoryByCategory: categories, technologies: technologies, lastSync: new Date().toISOString()
+    inventoryByCategory: categories, technologies: technologies, geoValidation: geoCounts, geoExceptionsByLocation: geoExceptionsByLocation, lastSync: new Date().toISOString()
   };
 }
 
@@ -260,6 +375,7 @@ function validEan13_(value) {
 function spreadsheet_() { return SpreadsheetApp.openById(SPREADSHEET_ID); }
 function productSheet_() { const sheet = findOrCreateSheet_(PRODUCT_SHEET, PRODUCT_HEADERS); ensureHeaders_(sheet, PRODUCT_HEADERS); return sheet; }
 function eventSheet_() { const sheet = findOrCreateSheet_(EVENT_SHEET, EVENT_HEADERS); ensureHeaders_(sheet, EVENT_HEADERS); return sheet; }
+function locationSheet_() { const sheet = findOrCreateSheet_(LOCATION_SHEET, LOCATION_HEADERS); ensureHeaders_(sheet, LOCATION_HEADERS); return sheet; }
 
 function findOrCreateSheet_(name, headers) {
   const ss = spreadsheet_(); const normalizedName = normalize_(name);
@@ -316,8 +432,9 @@ function productToApi_(row) { return {
   fechaRegistro: serialize_(row.FECHA_REGISTRO), ultimaActualizacion: serialize_(row.ULTIMA_ACTUALIZACION), estado: clean_(row.ESTADO)
 }; }
 function eventToApi_(row) { return {
-  idEvento: clean_(row.ID_EVENTO), fechaHora: serialize_(row.FECHA_HORA), idProducto: clean_(row.ID_PRODUCTO), tipoIdentificacion: clean_(row.TIPO_IDENTIFICACION), codigoLeido: clean_(row.CODIGO_LEIDO), evento: clean_(row.EVENTO), ubicacion: clean_(row.UBICACION), actor: clean_(row.ACTOR), observacion: clean_(row.OBSERVACION), estado: clean_(row.ESTADO), cantidadMovimiento: Number(row.CANTIDAD_MOVIMIENTO) || 0, stockAntes: Number(row.STOCK_ANTES) || 0, stockDespues: Number(row.STOCK_DESPUES) || 0, ubicacionOrigen: clean_(row.UBICACION_ORIGEN), ubicacionDestino: clean_(row.UBICACION_DESTINO)
+  idEvento: clean_(row.ID_EVENTO), fechaHora: serialize_(row.FECHA_HORA), idProducto: clean_(row.ID_PRODUCTO), tipoIdentificacion: clean_(row.TIPO_IDENTIFICACION), codigoLeido: clean_(row.CODIGO_LEIDO), evento: clean_(row.EVENTO), ubicacion: clean_(row.UBICACION), actor: clean_(row.ACTOR), observacion: clean_(row.OBSERVACION), estado: clean_(row.ESTADO), cantidadMovimiento: Number(row.CANTIDAD_MOVIMIENTO) || 0, stockAntes: Number(row.STOCK_ANTES) || 0, stockDespues: Number(row.STOCK_DESPUES) || 0, ubicacionOrigen: clean_(row.UBICACION_ORIGEN), ubicacionDestino: clean_(row.UBICACION_DESTINO), idUbicacionDeclarada: clean_(row.ID_UBICACION_DECLARADA), latCapturada: nullableNumber_(row.LAT_CAPTURADA), lonCapturada: nullableNumber_(row.LON_CAPTURADA), precisionM: nullableNumber_(row.PRECISION_M), fuenteUbicacion: clean_(row.FUENTE_UBICACION) || "SIN_GPS", distanciaDeclaradaM: nullableNumber_(row.DISTANCIA_DECLARADA_M), validacionGeo: clean_(row.VALIDACION_GEO) || "SIN_GPS"
 }; }
+function locationToApi_(row) { return { idUbicacion: clean_(row.ID_UBICACION), nombre: clean_(row.NOMBRE), tipo: clean_(row.TIPO), direccion: clean_(row.DIRECCION), lat: nullableNumber_(row.LAT), lon: nullableNumber_(row.LON), radioGeocercaM: nullableNumber_(row.RADIO_GEOCERCA_M), padreId: clean_(row.PADRE_ID), activo: !["NO", "FALSE", "0", "INACTIVO"].some(function (value) { return same_(row.ACTIVO, value); }) }; }
 
 function respond_(success, message, data, errorCode) { return ContentService.createTextOutput(JSON.stringify({ success: success, message: message, data: data === undefined ? null : data, errorCode: errorCode || undefined })).setMimeType(ContentService.MimeType.JSON); }
 function errorResponse_(error) { console.error(error && error.stack ? error.stack : error); return respond_(false, error.message || "Error interno del servidor.", null, error.code || "INTERNAL_ERROR"); }
@@ -327,5 +444,10 @@ function clean_(value) { return value === null || value === undefined ? "" : Str
 function same_(a, b) { return clean_(a).toLowerCase() === clean_(b).toLowerCase(); }
 function normalize_(value) { return clean_(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s-]+/g, "_").replace(/_+/g, "_").toUpperCase(); }
 function number_(value, code, message, allowZero) { const number = Number(value); if (!Number.isInteger(number) || number < (allowZero ? 0 : 1)) throw new AppError_(code, message); return number; }
+function nullableNumber_(value) { return clean_(value) === "" || !isFinite(Number(value)) ? null : Number(value); }
+function decimalOrBlank_(value, code, message, min, max, allowZero) { if (clean_(value) === "") return ""; const number = Number(value); if (!isFinite(number) || (min !== null && number < min) || (max !== null && number > max) || (allowZero === false && number === 0)) throw new AppError_(code, message); return number; }
+function isCoordinate_(value, min, max) { return clean_(value) !== "" && isFinite(Number(value)) && Number(value) >= min && Number(value) <= max; }
+function positiveOrNull_(value) { const number = Number(value); return isFinite(number) && number > 0 ? number : null; }
+function booleanYesNo_(value) { if (value === false || ["NO", "FALSE", "0", "INACTIVO"].some(function (item) { return same_(value, item); })) return "No"; return "Sí"; }
 function serialize_(value) { return Object.prototype.toString.call(value) === "[object Date]" ? value.toISOString() : (value === null || value === undefined ? "" : value); }
 function dateKey_(value) { const date = new Date(value); return isNaN(date.getTime()) ? "" : Utilities.formatDate(date, TIMEZONE, "yyyy-MM-dd"); }
