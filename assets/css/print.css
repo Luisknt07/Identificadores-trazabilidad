@@ -1,0 +1,3 @@
+@media print {
+  body{background:#fff}.sidebar,.topbar,.offline-banner,.view:not(#view-generator),.view-heading,.form-panel,.preview-top,.preview-actions,.toast-region{display:none!important}.main-column{margin:0}.content{padding:0}.view#view-generator{display:block!important}.generator-layout{display:block}.preview-panel{border:0;box-shadow:none;padding:0;background:#fff}.logistics-label{width:100mm;height:60mm;box-shadow:none;margin:0;border:1px solid #000;page-break-inside:avoid}@page{size:100mm 60mm;margin:0}
+}

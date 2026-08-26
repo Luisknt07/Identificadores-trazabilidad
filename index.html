@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#102a43">
+  <meta name="description" content="LogiTrace: identificación, trazabilidad e inventario logístico conectado con Google Sheets.">
+  <title>LogiTrace · Control logístico</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/variables.css">
+  <link rel="stylesheet" href="assets/css/layout.css">
+  <link rel="stylesheet" href="assets/css/components.css">
+  <link rel="stylesheet" href="assets/css/responsive.css">
+  <link rel="stylesheet" href="assets/css/print.css">
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Saltar al contenido</a>
+  <div id="offlineBanner" class="offline-banner" hidden>Sin conexión. Los cambios no se enviarán hasta recuperar internet.</div>
+  <aside id="localServerWarning" class="local-server-warning" role="alert" hidden>
+    <strong>LogiTrace no puede ejecutarse como archivo local.</strong>
+    <span>Abre <code>iniciar-logitrace.cmd</code> para activar los botones y la conexión con Google Sheets.</span>
+  </aside>
+
+  <div class="app-shell">
+    <aside id="sidebar" class="sidebar" aria-label="Navegación principal">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true"><i data-lucide="scan-line"></i></div>
+        <div><strong>LogiTrace</strong><span>Control logístico</span></div>
+      </div>
+      <nav id="mainNav" class="main-nav">
+        <button class="nav-item active" data-view="dashboard"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></button>
+        <button class="nav-item" data-view="products"><i data-lucide="package-2"></i><span>Productos</span></button>
+        <button class="nav-item" data-view="generator"><i data-lucide="barcode"></i><span>Generar códigos</span></button>
+        <button class="nav-item" data-view="scanner"><i data-lucide="scan-line"></i><span>Escáner</span></button>
+        <button class="nav-item" data-view="rfid"><i data-lucide="radio-tower"></i><span>RFID simulado</span></button>
+        <button class="nav-item" data-view="inventory"><i data-lucide="warehouse"></i><span>Inventario</span></button>
+        <button class="nav-item" data-view="trace"><i data-lucide="route"></i><span>Trazabilidad</span></button>
+        <button class="nav-item" data-view="events"><i data-lucide="history"></i><span>Eventos</span></button>
+      </nav>
+      <button class="nav-item sidebar-help" data-view="help"><i data-lucide="circle-help"></i><span>Ayuda y conexión</span></button>
+      <div class="sidebar-foot"><span class="pulse-dot"></span><span>Zona horaria</span><strong>Guayaquil</strong></div>
+    </aside>
+
+    <div id="sidebarBackdrop" class="sidebar-backdrop" hidden></div>
+
+    <div class="main-column">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="menuToggle" class="icon-button menu-toggle" aria-label="Abrir menú" aria-expanded="false"><i data-lucide="menu"></i></button>
+          <div><span class="eyebrow">Operación / <span id="breadcrumb">Dashboard</span></span><h1 id="pageTitle">Resumen operativo</h1></div>
+        </div>
+        <div class="topbar-actions">
+          <div id="connectionPill" class="connection-pill loading"><span></span><div><strong>Conectando</strong><small id="lastSync">Sin sincronizar</small></div></div>
+          <button id="refreshBtn" class="icon-button" aria-label="Actualizar datos" title="Actualizar"><i data-lucide="refresh-cw"></i></button>
+          <button class="button primary quick-scan" data-view="scanner"><i data-lucide="scan-line"></i><span>Escaneo rápido</span></button>
+        </div>
+      </header>
+
+      <main id="mainContent" class="content" tabindex="-1">
+        <section id="view-dashboard" class="view active" aria-labelledby="pageTitle">
+          <div class="hero-strip">
+            <div><span class="section-kicker">Visibilidad de la operación</span><h2>Todo el inventario, en contexto.</h2><p>Identificadores, stock y movimientos sincronizados con una sola fuente de datos.</p></div>
+            <button id="heroNewProduct" class="button light"><i data-lucide="plus"></i>Registrar producto</button>
+          </div>
+          <div id="dashboardKpis" class="kpi-grid" aria-live="polite"></div>
+          <div class="dashboard-grid">
+            <article class="panel chart-panel"><div class="panel-head"><div><span class="section-kicker">Stock</span><h3>Inventario por categoría</h3></div></div><div class="chart-wrap"><canvas id="categoryChart"></canvas><div id="categoryEmpty" class="empty-state" hidden></div></div></article>
+            <article class="panel chart-panel"><div class="panel-head"><div><span class="section-kicker">Identificación</span><h3>Tecnologías asociadas</h3></div></div><div class="chart-wrap donut"><canvas id="technologyChart"></canvas><div id="technologyEmpty" class="empty-state" hidden></div></div></article>
+          </div>
+          <article class="panel"><div class="panel-head"><div><span class="section-kicker">Actividad reciente</span><h3>Últimos movimientos</h3></div><button class="text-button" data-view="events">Ver historial <i data-lucide="arrow-right"></i></button></div><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>Producto</th><th>Evento</th><th>Cantidad</th><th>Ubicación</th><th>Actor</th><th>Estado</th></tr></thead><tbody id="recentEventsBody"></tbody></table></div></article>
+        </section>
+
+        <section id="view-products" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Catálogo maestro</span><h2>Productos</h2><p id="productsCount">Consulta y administra los productos identificados.</p></div><button id="newProductBtn" class="button primary"><i data-lucide="plus"></i>Nuevo producto</button></div>
+          <div class="toolbar panel"><label class="search-field"><i data-lucide="search"></i><input id="productSearch" type="search" placeholder="Buscar por ID, nombre, lote…" aria-label="Buscar productos"></label><select id="productCategoryFilter" aria-label="Filtrar por categoría"><option value="">Todas las categorías</option></select><select id="productStatusFilter" aria-label="Filtrar por estado"><option value="">Todos los estados</option><option>Disponible</option><option>Stock bajo</option><option>Agotado</option></select></div>
+          <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>ID de producto</th><th>Producto</th><th>Categoría</th><th>Lote</th><th>Stock</th><th>Ubicación</th><th>Estado</th><th>Identificadores</th><th><span class="sr-only">Acciones</span></th></tr></thead><tbody id="productsBody"></tbody></table></div><div id="productsPagination" class="pagination"></div></article>
+        </section>
+
+        <section id="view-generator" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Centro de etiquetado</span><h2>Generador de identificadores</h2><p>Selecciona, configura, genera y exporta.</p></div></div>
+          <div class="generator-layout">
+            <form id="generatorForm" class="panel form-panel">
+              <div class="step-label"><span>1</span><div><strong>Tipo de código</strong><small>Elige la simbología adecuada.</small></div></div>
+              <div class="segmented"><label><input type="radio" name="codeType" value="CODE128" checked><span>Code 128</span></label><label><input type="radio" name="codeType" value="EAN13"><span>EAN-13</span></label><label><input type="radio" name="codeType" value="ISMN"><span>ISMN</span></label><label><input type="radio" name="codeType" value="QR"><span>QR</span></label></div>
+              <div class="step-label"><span>2</span><div><strong>Datos</strong><small>Relaciona un producto o ingresa un valor.</small></div></div>
+              <label class="field"><span>Producto relacionado</span><select id="generatorProduct"><option value="">Sin relacionar / valor manual</option></select></label>
+              <label class="field"><span id="codeValueLabel">Valor a codificar</span><input id="codeValue" required maxlength="120" placeholder="UPEC-ALM-P001-L03-0001"><small id="codeHint">Code 128 admite identificadores alfanuméricos.</small></label>
+              <label id="qrPayloadField" class="check-field" hidden><input id="structuredQr" type="checkbox"><span>Usar payload JSON estructurado</span></label>
+              <div id="eanNotice" class="inline-notice warning" hidden><i data-lucide="triangle-alert"></i><span>EAN-13 e ISMN demostrativos / uso interno. Un número técnicamente válido no representa necesariamente una asignación oficial.</span></div>
+              <button class="button primary full" type="submit"><i data-lucide="sparkles"></i>Generar código</button>
+            </form>
+            <article id="codePreview" class="panel preview-panel">
+              <div class="preview-top"><div><span class="section-kicker">Vista previa</span><h3 id="previewType">Code 128</h3></div><span class="badge neutral">Etiqueta 100 × 60 mm</span></div>
+              <div id="labelCanvas" class="logistics-label">
+                <div class="label-brand"><span>LOGITRACE</span><small>IDENTIFICACIÓN LOGÍSTICA</small></div>
+                <strong id="labelProductName">Producto sin relacionar</strong>
+                <div id="barcodeBox" class="barcode-box"><svg id="barcodeSvg"></svg></div>
+                <div id="qrBox" class="qr-box" hidden></div>
+                <code id="labelCodeValue">UPEC-ALM-P001-L03-0001</code>
+                <div class="label-meta"><span id="labelCategory">CATEGORÍA: —</span><span id="labelLot">LOTE: —</span></div>
+              </div>
+              <div class="preview-actions"><button id="associateCodeBtn" class="button primary"><i data-lucide="link"></i>Asociar</button><button id="downloadCodeBtn" class="button secondary"><i data-lucide="download"></i>Descargar PNG</button><button id="printCodeBtn" class="button secondary"><i data-lucide="printer"></i>Imprimir</button><button id="copyCodeBtn" class="icon-button" aria-label="Copiar valor" title="Copiar"><i data-lucide="copy"></i></button></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-scanner" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Lectura multiformato</span><h2>Escáner</h2><p>Detecta Code 128, EAN-13 y QR desde cámara o imagen.</p></div></div>
+          <div class="scanner-layout">
+            <article class="panel scanner-panel">
+              <div class="mode-tabs"><button class="active" data-scan-mode="camera"><i data-lucide="camera"></i>Cámara</button><button data-scan-mode="image"><i data-lucide="image"></i>Imagen</button></div>
+              <div id="cameraMode"><div id="reader" class="reader-box"><div class="scanner-placeholder"><i data-lucide="scan-line"></i><strong>Cámara inactiva</strong><span>Autoriza el acceso para iniciar la lectura.</span></div></div><button id="startScannerBtn" class="button primary full"><i data-lucide="camera"></i>Activar cámara</button><button id="stopScannerBtn" class="button danger full" hidden><i data-lucide="square"></i>Detener cámara</button></div>
+              <div id="imageMode" hidden><label class="drop-zone" for="scanImage"><i data-lucide="image-up"></i><strong>Cargar una imagen</strong><span>PNG, JPG o WEBP con un código visible</span><input id="scanImage" type="file" accept="image/*" hidden></label></div>
+              <div class="manual-scan"><span>o ingresa el código manualmente</span><div><input id="manualCode" placeholder="Valor del código"><button id="manualSearchBtn" class="button secondary">Buscar</button></div></div>
+            </article>
+            <article id="scanResult" class="panel result-panel"><div class="empty-result"><i data-lucide="scan-line"></i><h3>Esperando una lectura</h3><p>El producto identificado aparecerá aquí. Ningún movimiento se registra automáticamente.</p></div></article>
+          </div>
+        </section>
+
+        <section id="view-rfid" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Demostración académica</span><h2>RFID simulado</h2><p>Asocia y simula la detección de una etiqueta sin afirmar lectura de hardware.</p></div><span class="badge warning">RFID SIMULADO</span></div>
+          <div class="rfid-grid">
+            <form id="rfidForm" class="panel form-panel"><label class="field"><span>Producto</span><select id="rfidProduct" required><option value="">Seleccionar producto</option></select></label><label class="field"><span>Formato</span><select id="rfidFormat"><option value="EPC">EPC-like 96 bits</option><option value="UID">UID hexadecimal</option></select></label><button class="button primary full" type="submit"><i data-lucide="radio-tower"></i>Generar identificador</button><div class="inline-notice"><i data-lucide="info"></i><span>Un navegador no lee RFID convencional sin hardware y software específicos. Este módulo es una simulación.</span></div></form>
+            <article class="panel rfid-card-wrap"><div id="rfidCard" class="rfid-card"><div class="rfid-waves"><i data-lucide="radio"></i></div><span>RFID SIMULADO</span><h3 id="rfidProductName">Sin producto asociado</h3><code id="rfidValue">GENERAR IDENTIFICADOR</code><small id="rfidFormatLabel">EPC-like · 96 bits</small></div><button id="simulateRfidBtn" class="button secondary full" disabled><i data-lucide="waves"></i>Simular lectura RFID</button></article>
+          </div>
+        </section>
+
+        <section id="view-inventory" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Existencias vigentes</span><h2>Inventario</h2><p>La cantidad mostrada corresponde al stock actual guardado en la hoja.</p></div></div>
+          <div id="inventoryKpis" class="kpi-grid compact"></div>
+          <div class="inventory-layout">
+            <aside class="panel category-panel"><div class="panel-head"><div><span class="section-kicker">Agrupación</span><h3>Categorías</h3></div></div><div id="categoryList" class="category-list"></div></aside>
+            <article class="panel table-panel"><div class="toolbar embedded"><label class="search-field"><i data-lucide="search"></i><input id="inventorySearch" type="search" placeholder="Buscar inventario" aria-label="Buscar inventario"></label><select id="inventoryStatus"><option value="">Todos los estados</option><option>Disponible</option><option>Stock bajo</option><option>Agotado</option></select></div><div class="table-scroll"><table><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Lote</th><th>Stock</th><th>Ubicación</th><th>Estado</th><th>Actualización</th></tr></thead><tbody id="inventoryBody"></tbody></table></div></article>
+          </div>
+        </section>
+
+        <section id="view-trace" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Historia inmutable</span><h2>Trazabilidad</h2><p>Consulta el recorrido completo de un producto.</p></div></div>
+          <article class="panel trace-search"><label class="field"><span>Seleccionar producto</span><select id="traceProduct"><option value="">Elige un producto para consultar</option></select></label></article>
+          <div id="traceContent" class="trace-content"><div class="panel empty-state"><i data-lucide="route"></i><h3>Selecciona un producto</h3><p>Aquí aparecerán su ficha y todos los eventos registrados.</p></div></div>
+        </section>
+
+        <section id="view-events" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Bitácora operativa</span><h2>Eventos logísticos</h2><p>Recepciones, ubicaciones, movimientos, despachos e incidencias.</p></div><button id="newEventBtn" class="button primary"><i data-lucide="plus"></i>Registrar evento</button></div>
+          <div class="toolbar panel"><label class="search-field"><i data-lucide="search"></i><input id="eventSearch" type="search" placeholder="Buscar por producto, código o actor" aria-label="Buscar eventos"></label><select id="eventTypeFilter"><option value="">Todos los eventos</option></select></div>
+          <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Fecha y hora</th><th>ID evento</th><th>Producto</th><th>Evento</th><th>Movimiento</th><th>Stock</th><th>Ruta / ubicación</th><th>Actor</th><th>Estado</th></tr></thead><tbody id="eventsBody"></tbody></table></div></article>
+        </section>
+
+        <section id="view-help" class="view">
+          <div class="view-heading"><div><span class="section-kicker">Centro de conocimiento</span><h2>Wiki de identificadores</h2><p>Aprende a elegir, generar, imprimir y utilizar cada tipo de código.</p></div></div>
+
+          <article class="panel wiki-hero">
+            <div><span class="section-kicker">Guía LogiTrace</span><h3>Identificación óptica y por radiofrecuencia</h3><p>Code 128 facilita la operación logística interna, EAN-13 identifica artículos comerciales, QR conecta el producto con información ampliada y RFID permite detectar etiquetas por radio sin línea de visión directa.</p></div>
+            <div class="wiki-privacy"><i data-lucide="shield-check"></i><div><strong>Configuración protegida</strong><span>Las direcciones, identificadores y datos técnicos de conexión no se muestran en esta pantalla.</span></div></div>
+          </article>
+
+          <div class="wiki-layout">
+            <aside class="wiki-sidebar">
+              <nav class="panel wiki-index" aria-label="Contenido de la wiki">
+                <span class="section-kicker">Contenido</span>
+                <a href="#wiki-compare"><i data-lucide="columns-3"></i>Comparación rápida</a>
+                <a href="#wiki-code128"><i data-lucide="barcode"></i>Code 128</a>
+                <a href="#wiki-ean13"><i data-lucide="scan-barcode"></i>EAN-13</a>
+                <a href="#wiki-qr"><i data-lucide="qr-code"></i>Código QR</a>
+                <a href="#wiki-rfid"><i data-lucide="radio-tower"></i>RFID</a>
+                <a href="#wiki-catalog"><i data-lucide="book-open"></i>Catálogo e ISMN</a>
+                <a href="#wiki-workflow"><i data-lucide="list-checks"></i>Uso en LogiTrace</a>
+                <a href="#wiki-practices"><i data-lucide="badge-check"></i>Buenas prácticas</a>
+                <a href="#wiki-faq"><i data-lucide="circle-help"></i>Preguntas frecuentes</a>
+              </nav>
+
+              <article class="panel wiki-status">
+                <div class="wiki-status-head"><span class="section-kicker">Estado del sistema</span><span id="helpConnectionBadge" class="badge neutral">Comprobando</span></div>
+                <strong id="helpConnectionText">Verificando el servicio de datos…</strong>
+                <dl><div><dt>Lectura</dt><dd id="helpReadMode">Verificando</dd></div><div><dt>Escritura</dt><dd id="helpWriteMode">Verificando</dd></div><div><dt>Privacidad</dt><dd>Conexión oculta</dd></div></dl>
+                <button id="testConnectionBtn" class="button secondary full"><i data-lucide="activity"></i>Probar conexión</button>
+              </article>
+            </aside>
+
+            <div class="wiki-content">
+              <section id="wiki-compare" class="panel wiki-section">
+                <div class="wiki-section-head"><div><span class="section-kicker">Decisión rápida</span><h3>¿Cuál debes utilizar?</h3></div><i data-lucide="git-compare-arrows"></i></div>
+                <div class="wiki-choice-grid">
+                  <article><span class="wiki-symbol linear"><i data-lucide="barcode"></i></span><h4>Code 128</h4><strong>Operación interna</strong><p>Para IDs alfanuméricos, cajas, ubicaciones, lotes y activos dentro de almacenes.</p><span class="badge info">Flexible</span></article>
+                  <article><span class="wiki-symbol retail"><i data-lucide="scan-barcode"></i></span><h4>EAN-13</h4><strong>Venta minorista</strong><p>Para productos que deben identificarse mediante un GTIN-13 en puntos de venta.</p><span class="badge warning">Solo 13 dígitos</span></article>
+                  <article><span class="wiki-symbol matrix"><i data-lucide="qr-code"></i></span><h4>Código QR</h4><strong>Información ampliada</strong><p>Para IDs, enlaces, textos o payloads estructurados que se leen con cámara o escáner 2D.</p><span class="badge success">Alta capacidad</span></article>
+                  <article><span class="wiki-symbol radio"><i data-lucide="radio-tower"></i></span><h4>RFID</h4><strong>Lectura sin contacto</strong><p>Para inventarios rápidos, portales logísticos y detección de varios objetos con hardware especializado.</p><span class="badge neutral">Requiere hardware</span></article>
+                </div>
+                <div class="table-scroll wiki-table"><table><thead><tr><th>Característica</th><th>Code 128</th><th>EAN-13</th><th>QR</th><th>RFID</th></tr></thead><tbody><tr><td>Tecnología</td><td>1D lineal</td><td>1D lineal</td><td>2D matricial</td><td>Radiofrecuencia</td></tr><tr><td>Contenido habitual</td><td>Letras, números y símbolos</td><td>13 dígitos</td><td>Texto, URL, ID o JSON</td><td>UID, EPC y memoria</td></tr><tr><td>Uso recomendado</td><td>Logística e inventario interno</td><td>Producto comercial / POS</td><td>Trazabilidad y acceso móvil</td><td>Lecturas masivas y automatización</td></tr><tr><td>Lectura</td><td>Escáner 1D/2D o cámara</td><td>Escáner comercial o cámara</td><td>Cámara o escáner 2D</td><td>Lector, antena y software</td></tr><tr><td>Ventaja principal</td><td>Densidad y flexibilidad</td><td>Interoperabilidad comercial</td><td>Capacidad y corrección de errores</td><td>Sin línea de visión y múltiples etiquetas</td></tr></tbody></table></div>
+              </section>
+
+              <section id="wiki-code128" class="panel wiki-section identifier-wiki code128">
+                <div class="wiki-section-head"><div><span class="section-kicker">Identificador 1 de 3</span><h3>Code 128</h3></div><span class="wiki-symbol linear"><i data-lucide="barcode"></i></span></div>
+                <p class="wiki-lead">Es un código de barras lineal de alta densidad. Resulta apropiado para identificadores internos que combinan letras, números y otros caracteres, como <code>UPEC-ALM-ALI-P001-L03</code>.</p>
+                <div class="wiki-columns"><div><h4>Cuándo usarlo</h4><ul><li>Etiquetas de cajas, pallets y ubicaciones.</li><li>Inventario y activos internos.</li><li>Números de serie, órdenes o lotes alfanuméricos.</li><li>Procesos logísticos que no pasan por caja comercial.</li></ul></div><div><h4>Ventajas y límites</h4><ul><li>Codifica mucha información en poco ancho.</li><li>No exige que el valor sea únicamente numérico.</li><li>Necesita contraste, altura y zonas silenciosas laterales.</li><li>No debe confundirse con GS1-128, que utiliza FNC1 e identificadores de aplicación GS1.</li></ul></div></div>
+                <div class="wiki-callout"><i data-lucide="lightbulb"></i><p><strong>En LogiTrace:</strong> úsalo como opción predeterminada para IDs propios de producto y etiquetas internas de almacén.</p></div>
+              </section>
+
+              <section id="wiki-ean13" class="panel wiki-section identifier-wiki ean13">
+                <div class="wiki-section-head"><div><span class="section-kicker">Identificador 2 de 3</span><h3>EAN-13</h3></div><span class="wiki-symbol retail"><i data-lucide="scan-barcode"></i></span></div>
+                <p class="wiki-lead">Representa un GTIN-13 mediante 13 dígitos. El último es un dígito de control calculado a partir de los 12 anteriores y ayuda a detectar errores de lectura.</p>
+                <div class="wiki-columns"><div><h4>Cuándo usarlo</h4><ul><li>Productos destinados al punto de venta minorista.</li><li>Artículos que necesitan interoperabilidad comercial.</li><li>Catálogos donde cada presentación tiene su propio GTIN.</li></ul></div><div><h4>Ventajas y límites</h4><ul><li>Es reconocido ampliamente por sistemas de punto de venta.</li><li>Su estructura es estrictamente numérica.</li><li>No guarda descripción, precio, lote ni fecha dentro del símbolo.</li><li>Para uso comercial, el número debe proceder de una asignación GS1.</li></ul></div></div>
+                <div class="wiki-callout warning"><i data-lucide="triangle-alert"></i><p><strong>Importante:</strong> el generador puede crear un EAN-13 técnicamente válido para demostración interna. Eso no lo convierte en un GTIN oficialmente asignado ni autoriza su uso comercial.</p></div>
+              </section>
+
+              <section id="wiki-qr" class="panel wiki-section identifier-wiki qr">
+                <div class="wiki-section-head"><div><span class="section-kicker">Identificador 3 de 4</span><h3>Código QR</h3></div><span class="wiki-symbol matrix"><i data-lucide="qr-code"></i></span></div>
+                <p class="wiki-lead">Es un símbolo bidimensional que almacena datos horizontal y verticalmente. Puede leerse en cualquier orientación y ofrece distintos niveles de corrección de errores.</p>
+                <div class="wiki-columns"><div><h4>Cuándo usarlo</h4><ul><li>Abrir la trazabilidad desde un teléfono.</li><li>Codificar un ID, URL, texto o JSON estructurado.</li><li>Etiquetas con poco espacio y más información.</li><li>Procesos donde el usuario utiliza una cámara.</li></ul></div><div><h4>Ventajas y límites</h4><ul><li>Admite mucha más información que un código lineal.</li><li>Puede recuperar datos cuando una parte está dañada.</li><li>Cuantos más datos contiene, más módulos y tamaño necesita.</li><li>Un QR común no cifra ni vuelve privados los datos codificados.</li></ul></div></div>
+                <div class="wiki-callout"><i data-lucide="shield-alert"></i><p><strong>Privacidad:</strong> codifica solamente el ID o una URL controlada. No incluyas contraseñas, claves, datos personales ni información confidencial directamente en el QR.</p></div>
+              </section>
+
+              <section id="wiki-rfid" class="panel wiki-section identifier-wiki rfid">
+                <div class="wiki-section-head"><div><span class="section-kicker">Identificador 4 de 4</span><h3>RFID</h3></div><span class="wiki-symbol radio"><i data-lucide="radio-tower"></i></span></div>
+                <p class="wiki-lead">RFID identifica y rastrea objetos mediante ondas de radio. A diferencia de los códigos ópticos, no necesita que la etiqueta esté visible frente a una cámara y puede detectar varias etiquetas dentro del campo de lectura.</p>
+                <div class="wiki-columns"><div><h4>Cuándo usarlo</h4><ul><li>Inventarios rápidos de muchas unidades.</li><li>Portales de entrada y salida de almacén.</li><li>Seguimiento de pallets, activos, textiles o herramientas.</li><li>Procesos donde el polvo, la orientación o la falta de visión dificultan el escaneo óptico.</li></ul></div><div><h4>Qué necesita un sistema real</h4><ul><li>Etiqueta RFID con chip y antena.</li><li>Lector o interrogador compatible con la frecuencia y protocolo.</li><li>Una o más antenas correctamente ubicadas.</li><li>Middleware o backend que filtre lecturas y las vincule con LogiTrace.</li></ul></div></div>
+
+                <div class="rfid-component-grid"><article><i data-lucide="tag"></i><strong>Etiqueta</strong><p>Guarda un UID, EPC u otros datos. Puede ser adhesiva, rígida o estar integrada en el objeto.</p></article><article><i data-lucide="radio-receiver"></i><strong>Lector</strong><p>Emite la señal, recibe las respuestas y entrega las lecturas al sistema.</p></article><article><i data-lucide="antenna"></i><strong>Antena</strong><p>Define la zona y orientación de lectura. Su diseño depende del entorno.</p></article><article><i data-lucide="server-cog"></i><strong>Software</strong><p>Elimina duplicados, aplica reglas y convierte cada detección en un evento.</p></article></div>
+
+                <div class="table-scroll rfid-table"><table><thead><tr><th>Familia</th><th>Frecuencia habitual</th><th>Alcance orientativo</th><th>Aplicaciones</th></tr></thead><tbody><tr><td>LF</td><td>125–134 kHz</td><td>Corto</td><td>Animales, inmovilizadores y control de acceso.</td></tr><tr><td>HF / NFC</td><td>13,56 MHz</td><td>Corto</td><td>Tarjetas, bibliotecas, pagos y teléfonos.</td></tr><tr><td>UHF / RAIN RFID</td><td>860–960 MHz</td><td>Varios metros</td><td>Logística, retail, pallets e inventarios masivos.</td></tr><tr><td>RFID activo</td><td>Según el sistema</td><td>Mayor alcance</td><td>Activos de alto valor, vehículos y localización.</td></tr></tbody></table></div>
+
+                <div class="wiki-callout warning"><i data-lucide="flask-conical"></i><p><strong>RFID simulado en LogiTrace:</strong> el navegador genera y asocia valores UID/EPC para fines demostrativos, pero no recibe ondas de radio. Una implementación real requiere lector, antena, controlador y una integración segura con la API.</p></div>
+              </section>
+
+              <section id="wiki-catalog" class="panel wiki-section wiki-catalog">
+                <div class="wiki-section-head"><div><span class="section-kicker">Referencia ampliada</span><h3>Catálogo de simbologías</h3></div><i data-lucide="book-open"></i></div>
+                <p class="wiki-lead">Como en la referencia de TEC‑IT, conviene seleccionar el formato según la industria y validar el dato antes de generar la imagen. LogiTrace incorpora Code 128, EAN-13, ISMN y QR; las demás fichas son una guía para futuras ampliaciones.</p>
+                <div class="symbol-catalog-grid"><article><strong>GS1-128</strong><span>Logística GS1</span><p>Codifica GTIN, lote, vencimiento y otros campos con identificadores de aplicación.</p></article><article><strong>ITF-14</strong><span>Cajas y embalajes</span><p>Identifica agrupaciones comerciales y tolera impresión sobre cartón corrugado.</p></article><article><strong>ISBN-13</strong><span>Libros</span><p>Identificador internacional de publicaciones monográficas, representado mediante EAN-13.</p></article><article><strong>ISSN</strong><span>Publicaciones seriadas</span><p>Identifica revistas y series; puede representarse con una estructura EAN compatible.</p></article><article class="active"><strong>ISMN</strong><span>Música notada</span><p>Empieza con 979-0 y se representa técnicamente mediante un símbolo EAN-13.</p></article><article><strong>Data Matrix</strong><span>Industria y salud</span><p>Código 2D compacto para datos estructurados, piezas pequeñas y marcado directo.</p></article><article><strong>PDF417</strong><span>Documentos</span><p>Código 2D apilado con capacidad para más información y usos documentales.</p></article><article><strong>UPC-A / EAN-8</strong><span>Retail</span><p>Alternativas numéricas para productos comerciales según mercado y espacio disponible.</p></article></div>
+
+                <article class="ismn-feature">
+                  <div class="ismn-preview"><span class="section-kicker">Ejemplo local</span><svg id="wikiIsmnBarcode" aria-label="Código ISMN 9790123456785"></svg><code>ISMN 979-0-12345678-5</code></div>
+                  <div class="ismn-copy"><span class="section-kicker">International Standard Music Number</span><h4>ISMN identifica partituras y música notada</h4><p>Consta de 13 dígitos, comienza con <strong>979-0</strong> y termina con un dígito de control. El número oficial debe ser asignado por una agencia ISMN; el generador valida la estructura, pero no asigna derechos ni registros.</p><ul><li>Prefijo de música: 979-0.</li><li>Elementos de registrante y publicación.</li><li>Control módulo 10 compatible con EAN-13.</li></ul><button id="tryIsmnBtn" class="button primary" data-view="generator"><i data-lucide="sparkles"></i>Probar ISMN en el generador</button></div>
+                </article>
+              </section>
+
+              <section id="wiki-workflow" class="panel wiki-section">
+                <div class="wiki-section-head"><div><span class="section-kicker">Procedimiento</span><h3>Cómo utilizarlos en LogiTrace</h3></div><i data-lucide="list-checks"></i></div>
+                <ol class="wiki-workflow"><li><span>1</span><div><strong>Registra el producto</strong><p>Define ID, nombre, categoría, lote, cantidad y ubicación.</p></div></li><li><span>2</span><div><strong>Elige el identificador</strong><p>Code 128 para operación interna, EAN-13/ISMN para usos normalizados, QR para datos ampliados o RFID cuando exista hardware.</p></div></li><li><span>3</span><div><strong>Genera y revisa</strong><p>Comprueba el valor, el nombre del producto y que la imagen sea legible.</p></div></li><li><span>4</span><div><strong>Asocia antes de imprimir</strong><p>Guarda la relación entre el código y el producto en la base de datos.</p></div></li><li><span>5</span><div><strong>Imprime y prueba</strong><p>Conserva contraste, tamaño y márgenes; realiza una lectura de prueba.</p></div></li><li><span>6</span><div><strong>Escanea y consulta</strong><p>La cámara abre automáticamente la trazabilidad; RFID real enviaría la lectura desde el middleware.</p></div></li></ol>
+              </section>
+
+              <section id="wiki-practices" class="panel wiki-section">
+                <div class="wiki-section-head"><div><span class="section-kicker">Calidad de lectura</span><h3>Buenas prácticas de impresión y uso</h3></div><i data-lucide="badge-check"></i></div>
+                <div class="practice-grid"><article><i data-lucide="contrast"></i><strong>Contraste alto</strong><p>Barras o módulos oscuros sobre fondo claro.</p></article><article><i data-lucide="move-horizontal"></i><strong>Respeta los márgenes</strong><p>No invadas las zonas libres alrededor del símbolo.</p></article><article><i data-lucide="maximize"></i><strong>No deformes</strong><p>Mantén proporción y resolución al redimensionar.</p></article><article><i data-lucide="scan-line"></i><strong>Prueba real</strong><p>Escanea una muestra antes de imprimir un lote completo.</p></article><article><i data-lucide="tag"></i><strong>Una relación única</strong><p>No asocies el mismo valor con varios productos.</p></article><article><i data-lucide="map-pin"></i><strong>Ubicación visible</strong><p>Evita dobleces, reflejos, curvas y zonas de roce.</p></article></div>
+              </section>
+
+              <section id="wiki-faq" class="panel wiki-section wiki-faq">
+                <div class="wiki-section-head"><div><span class="section-kicker">Resolución de dudas</span><h3>Preguntas frecuentes</h3></div><i data-lucide="messages-square"></i></div>
+                <details><summary>¿Code 128 y GS1-128 son lo mismo?</summary><p>No. GS1-128 utiliza la simbología Code 128, pero añade FNC1 y una estructura de identificadores de aplicación GS1 para interpretar campos como GTIN, lote o vencimiento.</p></details>
+                <details><summary>¿Puedo vender un producto con cualquier EAN-13 generado?</summary><p>No. Para comercialización debes utilizar un GTIN asignado de acuerdo con las reglas de GS1. El generador interno sirve para pruebas o docencia cuando no se afirma que sea un GTIN oficial.</p></details>
+                <details><summary>¿Un QR protege la información que contiene?</summary><p>No por sí solo. Un QR común representa datos; cualquier lector compatible puede mostrarlos. La seguridad debe aplicarse en el sistema o enlace de destino.</p></details>
+                <details><summary>¿El navegador puede leer una etiqueta RFID real?</summary><p>No directamente. El módulo actual es una simulación académica. Para RFID real se necesita un lector compatible y un servicio que comunique el hardware con la API de LogiTrace.</p></details>
+                <details><summary>¿Puedo inventar un número ISMN?</summary><p>Puedes generar ejemplos estructuralmente válidos para pruebas, pero un ISMN oficial debe ser asignado por una agencia ISMN al registrante y a la publicación correspondiente.</p></details>
+                <details><summary>¿Por qué la cámara no lee una etiqueta?</summary><p>Revisa permisos, enfoque, iluminación, contraste, tamaño, márgenes y que el código no esté deformado. Prueba también con la carga de imagen para aislar el problema.</p></details>
+              </section>
+
+              <section class="panel wiki-section wiki-sources">
+                <div class="wiki-section-head"><div><span class="section-kicker">Lecturas recomendadas</span><h3>Fuentes y referencias</h3></div><i data-lucide="library"></i></div>
+                <a href="https://stockagile.com/blog/tipos-de-codigos-de-barras/" target="_blank" rel="noopener noreferrer"><strong>Stockagile</strong><span>Guía general de tipos de códigos de barras.</span><i data-lucide="external-link"></i></a>
+                <a href="https://www.gs1.org/standards/barcodes/10-steps-to-barcode-your-product/english" target="_blank" rel="noopener noreferrer"><strong>GS1</strong><span>Proceso oficial para seleccionar e implementar códigos.</span><i data-lucide="external-link"></i></a>
+                <a href="https://www.gs1.org/services/activate/how-to-create-a-GTIN" target="_blank" rel="noopener noreferrer"><strong>GS1</strong><span>Cómo se crea y asigna un GTIN para EAN-13.</span><i data-lucide="external-link"></i></a>
+                <a href="https://support.gs1.org/support/solutions/articles/43000734455-what-is-the-format-of-gs1-128-" target="_blank" rel="noopener noreferrer"><strong>GS1 Support</strong><span>Diferencia estructural de GS1-128 y uso de FNC1.</span><i data-lucide="external-link"></i></a>
+                <a href="https://www.qrcode.com/en/about/" target="_blank" rel="noopener noreferrer"><strong>DENSO WAVE</strong><span>Características, capacidad y corrección de errores del QR.</span><i data-lucide="external-link"></i></a>
+                <a href="https://www.gs1.org/standards/rfid/guidelines" target="_blank" rel="noopener noreferrer"><strong>GS1 EPC/RFID</strong><span>Uso responsable de RFID y EPC en la cadena de suministro.</span><i data-lucide="external-link"></i></a>
+                <a href="https://support.gs1.org/support/solutions/articles/43000734205-what-is-an-electronic-product-code-epc-" target="_blank" rel="noopener noreferrer"><strong>GS1 EPC</strong><span>Relación entre identificadores GS1 y etiquetas RAIN RFID.</span><i data-lucide="external-link"></i></a>
+                <a href="https://www.iso.org/standard/75130.html" target="_blank" rel="noopener noreferrer"><strong>ISO/IEC 29160</strong><span>Emblema RFID y diversidad de frecuencias, protocolos y estructuras.</span><i data-lucide="external-link"></i></a>
+                <a href="https://barcode.tec-it.com/es/ISMN?data=9790123456785" target="_blank" rel="noopener noreferrer"><strong>TEC‑IT ISMN</strong><span>Referencia del generador y ejemplo ISMN 9790123456785.</span><i data-lucide="external-link"></i></a>
+                <a href="https://ismn-international.org/ismn/the-ismn/" target="_blank" rel="noopener noreferrer"><strong>Agencia Internacional ISMN</strong><span>Estructura oficial, prefijo 979-0 y representación EAN-13.</span><i data-lucide="external-link"></i></a>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="productDialog" class="modal-dialog">
+    <form id="productForm" method="dialog" novalidate>
+      <div class="modal-head"><div><span class="section-kicker">Catálogo</span><h2>Registrar producto</h2><p>La cantidad informada será el stock inicial.</p></div><button class="icon-button" value="cancel" formnovalidate aria-label="Cerrar"><i data-lucide="x"></i></button></div>
+      <div class="form-grid">
+        <label class="field span-2"><span>ID del producto <b>*</b></span><div class="input-action"><input id="productId" name="idProducto" required maxlength="60"><button id="generateProductId" type="button" class="button secondary">Generar</button></div></label>
+        <label class="field"><span>Nombre <b>*</b></span><input name="nombre" required maxlength="100"></label>
+        <label class="field"><span>Categoría <b>*</b></span><input name="categoria" required maxlength="60"></label>
+        <label class="field"><span>Lote <b>*</b></span><input name="lote" required maxlength="40"></label>
+        <label class="field"><span>Cantidad inicial <b>*</b></span><input name="cantidad" type="number" min="0" step="1" value="0" required></label>
+        <label class="field span-2"><span>Descripción</span><textarea name="descripcion" rows="2" maxlength="300"></textarea></label>
+        <label class="field"><span>Fecha de vencimiento</span><input name="fechaVencimiento" type="date"></label>
+        <label class="field"><span>Ubicación actual</span><input name="ubicacionActual" maxlength="80"></label>
+        <label class="field"><span>Origen</span><input name="origen" maxlength="80"></label>
+        <label class="field"><span>Destino</span><input name="destino" maxlength="80"></label>
+      </div>
+      <div id="productFormError" class="form-error" hidden></div>
+      <div class="modal-actions"><button class="button ghost" value="cancel" formnovalidate>Cancelar</button><button id="saveProductBtn" class="button primary" value="default"><i data-lucide="save"></i>Guardar producto</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="eventDialog" class="modal-dialog">
+    <form id="eventForm" method="dialog" novalidate>
+      <div class="modal-head"><div><span class="section-kicker">Movimiento controlado</span><h2>Registrar evento</h2><p>El backend valida y actualiza el stock cuando corresponde.</p></div><button class="icon-button" value="cancel" formnovalidate aria-label="Cerrar"><i data-lucide="x"></i></button></div>
+      <div class="form-grid">
+        <label class="field span-2"><span>Producto <b>*</b></span><select id="eventProduct" name="idProducto" required><option value="">Seleccionar producto</option></select></label>
+        <label class="field"><span>Tipo de evento <b>*</b></span><select id="eventType" name="evento" required></select></label>
+        <label id="eventQuantityField" class="field"><span>Cantidad <b>*</b></span><input name="cantidadMovimiento" type="number" min="1" step="1"></label>
+        <label id="originLocationField" class="field"><span>Ubicación origen</span><input name="ubicacionOrigen" maxlength="80"></label>
+        <label id="destinationLocationField" class="field"><span>Ubicación destino</span><input name="ubicacionDestino" maxlength="80"></label>
+        <label class="field"><span>Actor <b>*</b></span><input name="actor" required maxlength="80" placeholder="Operador 01"></label>
+        <label class="field"><span>Estado</span><select name="estado"><option>Completado</option><option>Pendiente</option><option>Con incidencia</option></select></label>
+        <label class="field span-2"><span>Observación</span><textarea name="observacion" rows="3" maxlength="400"></textarea></label>
+      </div>
+      <div id="eventStockPreview" class="stock-preview" hidden></div>
+      <div id="eventFormError" class="form-error" hidden></div>
+      <div class="modal-actions"><button class="button ghost" value="cancel" formnovalidate>Cancelar</button><button id="saveEventBtn" class="button primary" value="default"><i data-lucide="check"></i>Confirmar evento</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="productDetailDialog" class="modal-dialog detail-dialog"><div id="productDetailContent"></div></dialog>
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <div id="globalLoader" class="global-loader" hidden><div class="loader-card"><span class="spinner"></span><strong>Cargando datos reales…</strong></div></div>
+
+  <script>
+    (() => {
+      const titles = {
+        dashboard: ["Dashboard", "Resumen operativo"], products: ["Productos", "Catálogo de productos"],
+        generator: ["Generar códigos", "Centro de etiquetado"], scanner: ["Escáner", "Lectura de identificadores"],
+        rfid: ["RFID", "Identificación simulada"], inventory: ["Inventario", "Existencias vigentes"],
+        trace: ["Trazabilidad", "Historia del producto"], events: ["Eventos", "Bitácora logística"],
+        help: ["Ayuda", "Conexión y configuración"]
+      };
+      document.addEventListener("click", event => {
+        const button = event.target.closest("[data-view]");
+        if (!button) return;
+        const view = button.dataset.view;
+        document.querySelectorAll(".view").forEach(section => section.classList.toggle("active", section.id === `view-${view}`));
+        document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === view));
+        const breadcrumb = document.getElementById("breadcrumb"), pageTitle = document.getElementById("pageTitle");
+        if (breadcrumb) breadcrumb.textContent = titles[view]?.[0] || view;
+        if (pageTitle) pageTitle.textContent = titles[view]?.[1] || view;
+      });
+      if (window.location.protocol === "file:") {
+        document.getElementById("localServerWarning").hidden = false;
+        document.title = "Acción requerida · LogiTrace";
+      }
+      window.setTimeout(() => {
+        if (document.documentElement.dataset.logitraceReady === "true") return;
+        const pill = document.getElementById("connectionPill"), lastSync = document.getElementById("lastSync");
+        if (pill) pill.className = "connection-pill error";
+        if (pill?.querySelector("strong")) pill.querySelector("strong").textContent = "Error de inicio";
+        if (lastSync) lastSync.textContent = "Recarga con Ctrl+F5";
+      }, 8000);
+    })();
+  </script>
+  <script src="assets/vendor/lucide.min.js"></script>
+  <script src="assets/vendor/chart.umd.min.js"></script>
+  <script src="assets/vendor/JsBarcode.all.min.js"></script>
+  <script src="assets/vendor/qrcode.min.js"></script>
+  <script src="assets/vendor/html5-qrcode.min.js"></script>
+  <script src="assets/vendor/html2canvas.min.js"></script>
+  <script type="module" src="assets/js/app.js?v=20260826-14"></script>
+</body>
+</html>
